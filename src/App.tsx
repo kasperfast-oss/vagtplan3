@@ -25,8 +25,13 @@ import {
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc, updateDoc } from 'firebase/firestore';
 import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
+
+// --- Interfaces ---
+interface Employee { id: string; name: string; }
+interface Absence { id: string; empId: string; type: string; start: string; end: string; }
+interface Shift { id: string; empId: string; date: string; type: string; }
 
 const firebaseConfig = {
   apiKey: "AIzaSyAy_f-CiJLAKTP6nGMDEysBye5-hozsT2Q",
@@ -43,7 +48,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'vagtplan-47257';
 
-// --- Helpers ---
+// --- Hjælpefunktioner ---
 const parseDate = (dateString: string): Date => {
   if (!dateString) return new Date();
   const [y, m, d] = dateString.split('-');
@@ -71,6 +76,7 @@ const isWeekend = (date: Date): boolean => {
 };
 
 export default function App() {
+  // --- Tilstand (State) ---
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<'planner' | 'employee'>('employee'); 
   const [currentEmpId, setCurrentEmpId] = useState<string>(''); 
@@ -91,7 +97,7 @@ export default function App() {
   const [shiftForm, setShiftForm] = useState({ empId: '', date: '', type: '7-vagt' });
   const [newEmployeeName, setNewEmployeeName] = useState('');
 
-  // Sørg for at Tailwind er indlæst hvis StackBlitz mangler det
+  // Injektion af Tailwind CDN for at sikre styling uanset setup
   useEffect(() => {
     const script = document.createElement('script');
     script.src = "https://cdn.tailwindcss.com";
@@ -124,6 +130,7 @@ export default function App() {
     return () => unsubs.forEach(fn => fn());
   }, [user]);
 
+  // --- Logik og Privatlivsfiltre ---
   const getAbsenceOnDate = (date: Date, empId: string) => {
     const time = date.getTime();
     return absences.find(a => a.empId === empId && parseDate(a.start).getTime() <= time && parseDate(a.end).getTime() >= time);
@@ -145,6 +152,7 @@ export default function App() {
   const conflicts = useMemo(() => {
     const found: string[] = [];
     weekendShifts.forEach(s => {
+      if (!s.empId) return;
       const a = getAbsenceOnDate(parseDate(s.date), s.empId);
       if (a) {
         const emp = employees.find(e => e.id === s.empId);
@@ -154,18 +162,19 @@ export default function App() {
     return found;
   }, [absences, weekendShifts, employees]);
 
-  // Privatliv: Begræns medarbejder-visning til dem selv i matrixen
+  // Vigtigt: Begræns hvem der er synlige baseret på rolle og valg
   const visibleEmployees = useMemo(() => {
     if (role === 'planner') return employees.sort((a,b) => a.name.localeCompare(b.name));
     return employees.filter(e => e.id === currentEmpId);
   }, [employees, role, currentEmpId]);
 
-  // Privatliv: Begræns registreringer til dem selv i listen
+  // Vigtigt: Begræns hvilke registreringer der vises (Privatliv)
   const displayAbsences = useMemo(() => {
     const list = role === 'planner' ? absences : absences.filter(a => a.empId === currentEmpId);
     return [...list].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime());
   }, [absences, role, currentEmpId]);
 
+  // --- Handlinger ---
   const handleAddEmployee = async (e: FormEvent) => {
     e.preventDefault();
     if (!newEmployeeName.trim()) return;
@@ -185,7 +194,7 @@ export default function App() {
     e.preventDefault();
     if (!absForm.start || !absForm.end) return;
     const targetId = role === 'employee' ? currentEmpId : absForm.empId;
-    if (!targetId) { alert("Vælg venligst et navn før du gemmer."); return; }
+    if (!targetId) { alert("Vælg venligst dit navn først."); return; }
     const newId = Date.now().toString();
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', newId), { ...absForm, empId: targetId, id: newId });
     setAbsForm({ ...absForm, start: '', end: '', empId: '' });
@@ -193,34 +202,45 @@ export default function App() {
 
   const handleAddShift = async (e: FormEvent) => {
     e.preventDefault();
-    if (!shiftForm.date || !shiftForm.empId) return alert("Vælg både dato og medarbejder.");
+    if (!shiftForm.date) return alert("Vælg venligst en dato.");
     const newId = Date.now().toString();
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId), { ...shiftForm, id: newId });
     setShiftForm({ ...shiftForm, empId: '', date: '', type: '7-vagt' });
   };
 
   const handleAutoDistribute = async () => {
-    const weekendDates = periodDates.filter(d => isWeekend(d));
+    const unassignedShifts = weekendShifts.filter(s => !s.empId);
+    if (unassignedShifts.length === 0) {
+      alert("Der er ingen ledige vagter at fordele. Indskriv først vagtbehov i boksen til venstre.");
+      return;
+    }
+
     let counts: Record<string, number> = {};
     employees.forEach(e => counts[e.id] = weekendShifts.filter(s => s.empId === e.id).length);
 
-    for (const date of weekendDates) {
-      const dStr = formatDateForInput(date);
-      if (weekendShifts.some(s => s.date === dStr)) continue;
-      const time = date.getTime();
-      const available = employees.filter(emp => !absences.some(a => a.empId === emp.id && parseDate(a.start).getTime() <= time && parseDate(a.end).getTime() >= time));
+    for (const shift of unassignedShifts) {
+      const shiftDate = parseDate(shift.date);
+      const time = shiftDate.getTime();
+      
+      const available = employees.filter(emp => !absences.some(a => 
+        a.empId === emp.id && 
+        parseDate(a.start).getTime() <= time && 
+        parseDate(a.end).getTime() >= time
+      ));
+      
       if (available.length > 0) {
         available.sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0));
         const selected = available[0];
-        const newId = Date.now().toString() + Math.random().toString(36).substring(7);
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId), { empId: selected.id, date: dStr, id: newId, type: '7-vagt' });
+        
+        const shiftRef = doc(db, 'artifacts', appId, 'public', 'data', 'shifts', shift.id);
+        await updateDoc(shiftRef, { empId: selected.id });
         counts[selected.id] = (counts[selected.id] || 0) + 1;
       }
     }
   };
 
   if (!user) return (
-    <div className="min-h-screen flex items-center justify-center bg-white text-slate-400 font-sans uppercase tracking-widest text-xs">Forbinder til skydatabase...</div>
+    <div className="min-h-screen flex items-center justify-center bg-white text-slate-400 font-sans uppercase tracking-widest text-xs">Forbinder til sky-database...</div>
   );
 
   return (
@@ -289,51 +309,40 @@ export default function App() {
           >
             {role === 'planner' ? <Lock className="w-5 h-5" /> : <UserCircle className="w-5 h-5" />}
             <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
-              {role === 'planner' ? 'Admin Mode' : 'Admin Login'}
+              {role === 'planner' ? 'Admin' : 'Admin Login'}
             </span>
           </button>
         </div>
       </nav>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8">
         
-        {/* --- REGISTRATION VIEW --- */}
         {activeTab === 'input' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
             <div className="lg:col-span-12 mb-2">
-              <h1 className="text-4xl font-black text-slate-900 tracking-tight">Fraværsregistrering</h1>
-              <p className="text-slate-500 font-medium text-lg mt-1">Indsend dine ønsker til ferie og fridage.</p>
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight text-left">Fraværsregistrering</h1>
+              <p className="text-slate-500 font-medium text-lg mt-1 text-left">Indsend dine ønsker til ferie og fridage herunder.</p>
             </div>
 
             <div className="lg:col-span-4 space-y-6">
+              {/* Ønske Formular */}
               <section className={`bg-white rounded-3xl shadow-sm border p-6 md:p-8 overflow-hidden relative transition-all ${!currentEmpId && role === 'employee' ? 'border-red-100' : 'border-slate-200'}`}>
                 <div className={`absolute top-0 left-0 w-full h-1.5 ${!currentEmpId && role === 'employee' ? 'bg-red-400' : (absForm.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500')}`}></div>
-                
-                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ferieønske
+                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2 text-left">
+                  <Plus className="w-5 h-5 text-blue-600" /> Nyt fraværsønske
                 </h2>
-
-                {!currentEmpId && role === 'employee' ? (
+                {!currentEmpId && role === 'employee' && (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6">
                     <p className="text-red-700 text-xs font-bold leading-tight flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 shrink-0" /> Vælg dit navn i toppen først!
+                      <AlertTriangle className="w-5 h-5 shrink-0" /> Du skal vælge dit navn i toppen først!
                     </p>
                   </div>
-                ) : role === 'employee' && (
-                  <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 mb-6 flex items-center gap-3">
-                    <UserCheck className="w-5 h-5 text-blue-600" />
-                    <div>
-                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">Valgt profil</p>
-                      <p className="text-blue-900 text-sm font-bold">{employees.find(e => e.id === currentEmpId)?.name}</p>
-                    </div>
-                  </div>
                 )}
-
                 <form onSubmit={handleAddAbsence} className={`space-y-6 ${!currentEmpId && role === 'employee' ? 'opacity-30 pointer-events-none' : ''}`}>
                   {role === 'planner' && (
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Vælg Medarbejder</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest text-left">Medarbejder</label>
                       <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
                         <option value="">Vælg...</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -341,7 +350,7 @@ export default function App() {
                     </div>
                   )}
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Type</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest text-left">Type</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400'}`}>Ferie</button>
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>Vagtfri</button>
@@ -351,23 +360,24 @@ export default function App() {
                     <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                   </div>
-                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-xl shadow-blue-100 active:scale-95">Gem ønske</button>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-xl shadow-blue-100">Gem registrering</button>
                 </form>
               </section>
 
+              {/* Vagtbehov Formular (Kun Admin) */}
               {role === 'planner' && (
                 <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 overflow-hidden relative">
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-600"></div>
-                  <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-blue-600" /> Tildel Weekendvagt
+                  <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2 text-left">
+                    <ShieldAlert className="w-5 h-5 text-blue-600" /> Indskriv Vagtbehov
                   </h2>
                   <form onSubmit={handleAddShift} className="space-y-6">
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Dato</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest text-left">Dato</label>
                       <input type="date" value={shiftForm.date} onChange={e => setShiftForm({...shiftForm, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Vagttype</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest text-left">Vagttype</label>
                       <select value={shiftForm.type} onChange={e => setShiftForm({...shiftForm, type: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
                         <option value="7-vagt">7-vagt</option>
                         <option value="9-vagt">9-vagt</option>
@@ -375,42 +385,46 @@ export default function App() {
                       </select>
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Medarbejder</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest text-left">Tildel medarbejder (valgfrit)</label>
                       <select value={shiftForm.empId} onChange={e => setShiftForm({...shiftForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
-                        <option value="">Vælg...</option>
+                        <option value="">Lad være ledig (fordel automatisk)</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl text-sm font-black transition-all shadow-lg active:scale-95">Bekræft vagt</button>
+                    <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl text-sm font-black shadow-lg">Bekræft vagtbehov</button>
                   </form>
                 </section>
               )}
             </div>
 
+            {/* Højre side: Lister */}
             <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden w-full">
                 <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-white">
                   <h2 className="font-black text-2xl text-slate-900">
-                    {role === 'planner' ? 'Alle registreringer' : 'Mine registreringer'}
+                    {role === 'planner' ? 'Alle fraværsregistreringer' : 'Mine registreringer'}
                   </h2>
                   <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-2 rounded-full">
                     <Info className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Cloud Synkroniseret</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest leading-none">Cloud Synkroniseret</span>
                   </div>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {displayAbsences.length === 0 ? (
-                    <div className="p-24 text-center text-slate-400 font-bold italic text-lg">Ingen registreringer fundet...</div>
+                    <div className="p-24 text-center">
+                      <p className="text-slate-400 font-bold italic text-lg">Ingen registreringer fundet...</p>
+                    </div>
                   ) : (
                     displayAbsences.map(a => {
                       const emp = employees.find(e => e.id === a.empId);
+                      const isMine = a.empId === currentEmpId;
                       return (
-                        <div key={a.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
-                          <div className="flex items-center gap-4 md:gap-6">
+                        <div key={a.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group text-left">
+                          <div className="flex items-center gap-6">
                             <div className={`w-1.5 h-12 rounded-full ${a.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500'}`}></div>
                             <div>
                               <div className="flex flex-wrap items-center gap-3">
-                                <span className="font-black text-lg text-slate-900">{emp?.name || 'Ukendt'}</span>
+                                <span className="font-black text-lg text-slate-900">{emp?.name || 'Ukendt'} {isMine && '(Dig)'}</span>
                                 <span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-lg ${a.type === 'vacation' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{a.type === 'vacation' ? 'Ferie' : 'Vagtfri'}</span>
                               </div>
                               <p className="text-sm font-bold text-slate-500 mt-1 flex items-center gap-1.5">
@@ -418,9 +432,11 @@ export default function App() {
                               </p>
                             </div>
                           </div>
-                          <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
-                            <Trash2 className="w-5 h-5" />
-                          </button>
+                          {(role === 'planner' || isMine) && (
+                            <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
+                              <Trash2 className="w-5 h-5" />
+                            </button>
+                          )}
                         </div>
                       )
                     })
@@ -430,19 +446,22 @@ export default function App() {
 
               {role === 'planner' && weekendShifts.length > 0 && (
                 <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="p-8 border-b border-slate-100">
-                    <h2 className="font-black text-xl text-slate-900">Aktuelle Weekendvagter</h2>
+                  <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-white">
+                    <h2 className="font-black text-xl text-slate-900 uppercase tracking-tight">Afdelingens Vagtbehov</h2>
+                    <button onClick={handleAutoDistribute} className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-xl text-xs font-black flex items-center gap-2 transition-all">
+                      <Wand2 className="w-4 h-4" /> Fordel ledige vagter automatisk
+                    </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                     {weekendShifts.sort((a,b) => parseDate(a.date).getTime() - parseDate(b.date).getTime()).map(s => {
                       const emp = employees.find(e => e.id === s.empId);
                       return (
-                        <div key={s.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                        <div key={s.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors text-left">
                           <div className="flex items-center gap-4">
-                            <div className="bg-blue-50 text-blue-600 p-2.5 rounded-xl font-black text-xs uppercase">{s.type}</div>
+                            <div className={`${s.empId ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'} p-2.5 rounded-xl font-black text-[10px] uppercase`}>{s.type}</div>
                             <div>
-                              <p className="font-black text-slate-900 leading-none">{emp?.name}</p>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{getDayName(parseDate(s.date))}. {formatDateShort(parseDate(s.date))}</p>
+                              <p className={`font-black ${s.empId ? 'text-slate-900' : 'text-blue-600 italic'}`}>{emp?.name || 'LEDIG VAGT'}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1 tracking-wider">{getDayName(parseDate(s.date))}. {formatDateShort(parseDate(s.date))}</p>
                             </div>
                           </div>
                           <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', s.id))} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
@@ -460,14 +479,14 @@ export default function App() {
         {activeTab === 'calendar' && (
           <div className="space-y-8 animate-in fade-in duration-500">
             {conflicts.length > 0 && role === 'planner' && (
-              <div className="bg-red-50 border border-red-100 rounded-[2rem] p-6 md:p-8 flex gap-6">
+              <div className="bg-red-50 border border-red-100 rounded-[2rem] p-6 md:p-8 flex gap-6 text-left">
                 <div className="bg-red-500 p-3 rounded-2xl text-white self-start">
                   <AlertTriangle className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-red-900 font-black text-lg">Konflikter fundet</h3>
-                  <p className="text-red-700 text-sm font-medium mb-4 italic">Følgende personer er tildelt vagter mens de har ønsket fravær:</p>
-                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <h3 className="text-red-900 font-black text-lg">Vagtkonflikter opdaget</h3>
+                  <p className="text-red-700 text-sm font-medium mb-4 italic text-left">Følgende personer er tildelt vagter mens de har ønsket fravær:</p>
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-left">
                     {conflicts.map((c, i) => <li key={i} className="text-red-600 text-[11px] font-black flex items-center gap-2 bg-white/50 p-2 rounded-lg border border-red-100 uppercase"><ArrowRight className="w-3 h-3" /> {c}</li>)}
                   </ul>
                 </div>
@@ -508,7 +527,7 @@ export default function App() {
                     {visibleEmployees.length === 0 ? (
                       <tr>
                         <td colSpan={periodDates.length + 1} className="p-24 text-center text-slate-400 font-bold italic text-lg">
-                          Vælg dit navn i toppen for at se din plan.
+                          Vælg dit navn i toppen for at se din personlige plan.
                         </td>
                       </tr>
                     ) : (
@@ -539,18 +558,32 @@ export default function App() {
                         </tr>
                       ))
                     )}
+                    {/* Mangler dækning række & Grænse tjek (Kun Admin) */}
                     {role === 'planner' && employees.length > 0 && (
-                      <tr className="bg-slate-100/50 border-t-2 border-slate-200">
-                        <td className="sticky left-0 z-20 bg-slate-200 p-4 text-right font-black text-[10px] text-slate-500 uppercase border-r border-slate-200">Total på ferie</td>
-                        {periodDates.map((date, i) => {
-                          const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
-                          return (
-                            <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${count > maxAway ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
-                              {count > 0 ? count : '-'}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                      <>
+                        <tr className="bg-slate-100/50 border-t-2 border-slate-200">
+                          <td className="sticky left-0 z-20 bg-slate-200 p-4 text-left font-black text-[10px] text-blue-600 uppercase border-r border-slate-200 shadow-sm leading-tight">Ledige vagter</td>
+                          {periodDates.map((date, i) => {
+                            const openShifts = weekendShifts.filter(s => !s.empId && s.date === formatDateForInput(date));
+                            return (
+                              <td key={i} className={`text-center font-black text-[10px] border-r border-slate-100/30 py-3 ${openShifts.length > 0 ? 'text-blue-600 bg-blue-50 animate-pulse' : 'text-slate-300'}`}>
+                                {openShifts.length > 0 ? openShifts.map(s => s.type.split('-')[0]).join('/') : '-'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr className="bg-slate-100/50 border-t border-slate-200">
+                          <td className="sticky left-0 z-20 bg-slate-200 p-4 text-left font-black text-[10px] text-slate-500 uppercase border-r border-slate-200 shadow-sm leading-tight">Total på ferie</td>
+                          {periodDates.map((date, i) => {
+                            const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
+                            return (
+                              <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${count > maxAway ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
+                                {count > 0 ? count : '-'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </>
                     )}
                   </tbody>
                 </table>
@@ -559,13 +592,10 @@ export default function App() {
 
             {role === 'planner' && (
               <section className="bg-slate-900 rounded-[2rem] p-8 text-white relative overflow-hidden">
-                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-8 text-left">
                   <div>
-                    <h2 className="text-2xl font-black mb-2 tracking-tight">Indstillinger & Fordeling</h2>
-                    <p className="text-slate-400 text-sm font-medium mb-4">Styr periode, grænser og kør automatisk weekend-tildeling.</p>
-                    <button onClick={handleAutoDistribute} className="bg-blue-600 hover:bg-blue-500 text-white py-3 px-6 rounded-xl text-sm font-black flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-blue-900/20">
-                      <Wand2 className="w-5 h-5" /> Kør automatisk fordeling
-                    </button>
+                    <h2 className="text-2xl font-black mb-2 tracking-tight uppercase">System-indstillinger</h2>
+                    <p className="text-slate-400 text-sm font-medium">Styr planlægningsperiode og ferie-grænser.</p>
                   </div>
                   <div className="flex flex-wrap gap-6">
                     <div>
@@ -588,12 +618,12 @@ export default function App() {
           </div>
         )}
 
-        {/* --- STAFF MANAGEMENT VIEW --- */}
+        {/* --- PERSONALE --- */}
         {activeTab === 'staff' && role === 'planner' && (
           <div className="max-w-3xl mx-auto animate-in fade-in duration-500">
             <header className="mb-12 text-center">
-              <h1 className="text-4xl font-black text-slate-900 tracking-tight">Personalestyring</h1>
-              <p className="text-slate-500 text-lg">Administrer listen over ansatte i redaktionen.</p>
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase text-center">Personalestyring</h1>
+              <p className="text-slate-500 text-lg text-center">Administrer listen over ansatte i redaktionen.</p>
             </header>
 
             <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 mb-10">
@@ -602,7 +632,7 @@ export default function App() {
                   <UserPlus className="absolute left-4 top-3.5 w-5 h-5 text-slate-300" />
                   <input type="text" placeholder="Navn på medarbejder..." value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                 </div>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-2xl text-sm font-black transition-all shadow-lg shadow-blue-100">Opret</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-2xl text-sm font-black transition-all shadow-lg shadow-blue-100 uppercase tracking-widest">Opret</button>
               </form>
             </section>
 
@@ -612,12 +642,12 @@ export default function App() {
                   <div className="p-16 text-center text-slate-400 font-bold italic text-lg">Ingen medarbejdere oprettet endnu...</div>
                 ) : (
                   employees.sort((a,b) => a.name.localeCompare(b.name)).map(emp => (
-                    <div key={emp.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
+                    <div key={emp.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group text-left">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center font-black text-lg uppercase">{emp.name.charAt(0)}</div>
+                        <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center font-black text-lg uppercase leading-none">{emp.name.charAt(0)}</div>
                         <span className="font-black text-xl text-slate-900">{emp.name}</span>
                       </div>
-                      <button onClick={() => handleDeleteEmployee(emp.id)} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 active:scale-95">
+                      <button onClick={() => handleDeleteEmployee(emp.id)} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 active:scale-95 leading-none">
                         <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
@@ -629,8 +659,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="h-24 flex items-center justify-center border-t border-slate-100 bg-white mt-auto">
+      <footer className="h-24 flex items-center justify-center border-t border-slate-100 bg-white mt-auto w-full">
         <button onClick={() => window.location.reload()} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest transition-all">
           <LogOut className="w-4 h-4" /> Nulstil session
         </button>
@@ -638,8 +667,3 @@ export default function App() {
     </div>
   );
 }
-
-// Interfaces 
-interface Employee { id: string; name: string; }
-interface Absence { id: string; empId: string; type: string; start: string; end: string; }
-interface Shift { id: string; empId: string; date: string; type: string; }
