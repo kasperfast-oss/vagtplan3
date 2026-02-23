@@ -22,34 +22,13 @@ import {
   Info
 } from 'lucide-react';
 
-// --- Firebase Cloud Storage Setup ---
+// --- Firebase Setup ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
 
-// --- TypeScript Interfaces ---
-interface Employee {
-  id: string;
-  name: string;
-}
-
-interface Absence {
-  id: string;
-  empId: string;
-  type: string;
-  start: string;
-  end: string;
-}
-
-interface Shift {
-  id: string;
-  empId: string;
-  date: string;
-}
-
-// Firebase konfiguration
 const firebaseConfig = {
   apiKey: "AIzaSyAy_f-CiJLAKTP6nGMDEysBye5-hozsT2Q",
   authDomain: "vagtplan-47257.firebaseapp.com",
@@ -65,7 +44,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'vagtplan-47257';
 
-// --- Hjælpefunktioner ---
+// --- Helpers ---
 const parseDate = (dateString: string): Date => {
   if (!dateString) return new Date();
   const [y, m, d] = dateString.split('-');
@@ -93,7 +72,6 @@ const isWeekend = (date: Date): boolean => {
 };
 
 export default function App() {
-  // --- Tilstand ---
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<'planner' | 'employee'>('employee'); 
   const [currentEmpId, setCurrentEmpId] = useState<string>(''); 
@@ -113,7 +91,13 @@ export default function App() {
   const [absForm, setAbsForm] = useState({ empId: '', type: 'vacation', start: '', end: '' });
   const [newEmployeeName, setNewEmployeeName] = useState('');
 
-  // --- Firebase Hooks ---
+  // Injection of Tailwind CDN as a safety measure
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://cdn.tailwindcss.com";
+    document.head.appendChild(script);
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
       try { await signInAnonymously(auth); } catch (e: any) { console.error(e); }
@@ -140,7 +124,6 @@ export default function App() {
     return () => unsubs.forEach(fn => fn());
   }, [user]);
 
-  // --- Logik ---
   const getAbsenceOnDate = (date: Date, empId: string) => {
     const time = date.getTime();
     return absences.find(a => a.empId === empId && parseDate(a.start).getTime() <= time && parseDate(a.end).getTime() >= time);
@@ -176,7 +159,6 @@ export default function App() {
     return employees.filter(e => e.id === currentEmpId);
   }, [employees, role, currentEmpId]);
 
-  // --- Handlinger ---
   const handleAddEmployee = async (e: FormEvent) => {
     e.preventDefault();
     if (!newEmployeeName.trim()) return;
@@ -194,10 +176,7 @@ export default function App() {
     e.preventDefault();
     if (!absForm.start || !absForm.end) return;
     const targetId = role === 'employee' ? currentEmpId : absForm.empId;
-    if (!targetId) {
-      alert("Vælg venligst dit navn først.");
-      return;
-    }
+    if (!targetId) { alert("Vælg venligst dit navn først."); return; }
     const newId = Date.now().toString();
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', newId), { ...absForm, empId: targetId, id: newId });
     setAbsForm({ ...absForm, start: '', end: '', empId: '' });
@@ -224,30 +203,26 @@ export default function App() {
   };
 
   if (!user) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-slate-400 font-bold text-sm tracking-tight uppercase tracking-widest">Forbinder...</p>
-      </div>
-    </div>
+    <div className="min-h-screen flex items-center justify-center bg-white text-slate-400">Indlæser...</div>
   );
 
   return (
-    <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col font-sans selection:bg-blue-100 text-left overflow-x-hidden">
-      {/* CSS RESET FOR STACKBLITZ INTERFERENCE */}
+    <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-left overflow-x-hidden">
+      {/* GLOBAL CSS OVERRIDE */}
       <style>{`
-        #root { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; display: block !important; }
-        body { margin: 0; padding: 0; place-items: start !important; }
+        #root, body, html { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; display: block !important; }
+        body { background-color: #F8FAFC; }
+        * { box-sizing: border-box; }
       `}</style>
       
-      {/* Top Navigation Bar */}
+      {/* Top Navigation */}
       <nav className="bg-white border-b border-slate-200 h-16 sticky top-0 z-50 px-4 md:px-8 flex items-center justify-between shadow-sm w-full">
         <div className="flex items-center gap-4 md:gap-8">
           <div className="flex items-center gap-2.5">
             <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
               <CalendarDays className="w-5 h-5" />
             </div>
-            <span className="font-black text-xl text-slate-900 tracking-tight hidden sm:inline">VagtPlan <span className="text-blue-600 font-medium">Pro</span></span>
+            <span className="font-black text-xl text-slate-900 tracking-tight hidden sm:inline uppercase">VagtPlan</span>
           </div>
 
           <div className="flex items-center bg-slate-100 p-1 rounded-xl">
@@ -275,19 +250,17 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
-          {employees.length > 0 && (
-            <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-full border transition-all group ${!currentEmpId && role === 'employee' ? 'bg-red-50 border-red-200 ring-2 ring-red-100 animate-pulse' : 'bg-slate-50 border-slate-200'}`}>
-              <UserCircle className={`w-4 h-4 ${!currentEmpId && role === 'employee' ? 'text-red-400' : 'text-slate-400 group-hover:text-blue-500'}`} />
-              <select 
-                value={currentEmpId} 
-                onChange={(e) => setCurrentEmpId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer max-w-[100px] md:max-w-[150px]"
-              >
-                <option value="">Vælg dit navn...</option>
-                {employees.sort((a,b) => a.name.localeCompare(b.name)).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-            </div>
-          )}
+          <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-full border transition-all group ${!currentEmpId && role === 'employee' ? 'bg-red-50 border-red-200 ring-2 ring-red-100' : 'bg-slate-50 border-slate-200'}`}>
+            <UserCircle className={`w-4 h-4 ${!currentEmpId && role === 'employee' ? 'text-red-400' : 'text-slate-400 group-hover:text-blue-500'}`} />
+            <select 
+              value={currentEmpId} 
+              onChange={(e) => setCurrentEmpId(e.target.value)}
+              className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value="">Vælg dit navn...</option>
+              {employees.sort((a,b) => a.name.localeCompare(b.name)).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
           
           <button 
             onClick={() => {
@@ -296,17 +269,15 @@ export default function App() {
               if (newRole === 'employee') setActiveTab('input');
             }}
             className={`p-2.5 rounded-xl transition-all border flex items-center gap-2 ${role === 'planner' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-400 border-slate-200'}`}
-            title="Skift til Admin"
           >
             {role === 'planner' ? <Lock className="w-5 h-5" /> : <UserCircle className="w-5 h-5" />}
-            <span className="text-xs font-black uppercase tracking-widest hidden lg:inline">
-              {role === 'planner' ? 'Admin' : 'Admin Login'}
+            <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
+              {role === 'planner' ? 'Admin Mode' : 'Admin'}
             </span>
           </button>
         </div>
       </nav>
 
-      {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8">
         
         {/* --- REGISTRATION VIEW --- */}
@@ -322,13 +293,13 @@ export default function App() {
                 <div className={`absolute top-0 left-0 w-full h-1.5 ${!currentEmpId && role === 'employee' ? 'bg-red-400' : (absForm.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500')}`}></div>
                 
                 <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ønske
+                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ferieønske
                 </h2>
 
                 {!currentEmpId && role === 'employee' ? (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6">
                     <p className="text-red-700 text-xs font-bold leading-tight flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 shrink-0" /> Du skal vælge dit navn i toppen først!
+                      <AlertTriangle className="w-5 h-5 shrink-0" /> Vælg dit navn i toppen først!
                     </p>
                   </div>
                 ) : role === 'employee' && (
@@ -345,20 +316,20 @@ export default function App() {
                   {role === 'planner' && (
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Vælg Medarbejder</label>
-                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
                         <option value="">Vælg...</option>
                         {employees.sort((a,b) => a.name.localeCompare(b.name)).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
                   )}
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Ønsketype</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Type</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400'}`}>Ferie</button>
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>Vagtfri</button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Fra</label>
                       <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
@@ -368,27 +339,23 @@ export default function App() {
                       <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     </div>
                   </div>
-                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black transition-all shadow-xl shadow-blue-100 active:scale-95">Gem ønske</button>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-lg shadow-blue-100">Gem ønske</button>
                 </form>
               </section>
 
               {role === 'planner' && (
                 <section className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white space-y-8">
-                  <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <Settings className="w-4 h-4" /> Periode-indstillinger
+                  <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                    <Settings className="w-4 h-4" /> Periode-opsætning
                   </h2>
                   <div className="space-y-6">
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Start dato</label>
-                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none" />
+                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Slut dato</label>
-                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Ferie-grænse</label>
-                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none" />
+                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
                 </section>
@@ -397,8 +364,8 @@ export default function App() {
 
             <div className="lg:col-span-8">
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden w-full">
-                <div className="p-6 md:p-8 border-b border-slate-100 flex flex-wrap justify-between items-center bg-white gap-4">
-                  <h2 className="font-black text-2xl text-slate-900">Registrerede ferier</h2>
+                <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-white">
+                  <h2 className="font-black text-2xl text-slate-900">Aktuelle registreringer</h2>
                   <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-2 rounded-full">
                     <Info className="w-4 h-4" />
                     <span className="text-[10px] font-black uppercase tracking-widest">Synkroniseret</span>
@@ -412,16 +379,15 @@ export default function App() {
                   ) : (
                     [...absences].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime()).map(a => {
                       const emp = employees.find(e => e.id === a.empId);
-                      const isVacation = a.type === 'vacation';
                       const isMine = a.empId === currentEmpId;
                       return (
                         <div key={a.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                           <div className="flex items-center gap-4 md:gap-6">
-                            <div className={`w-1.5 h-12 rounded-full ${isVacation ? 'bg-green-500' : 'bg-amber-500'}`}></div>
+                            <div className={`w-1.5 h-12 rounded-full ${a.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500'}`}></div>
                             <div>
                               <div className="flex flex-wrap items-center gap-3">
                                 <span className="font-black text-lg text-slate-900">{emp?.name || 'Ukendt'} {isMine && <span className="text-[10px] text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">(Dig)</span>}</span>
-                                <span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-lg ${isVacation ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{a.type === 'vacation' ? 'Ferie' : 'Vagtfri'}</span>
+                                <span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-lg ${a.type === 'vacation' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{a.type === 'vacation' ? 'Ferie' : 'Vagtfri'}</span>
                               </div>
                               <p className="text-sm font-bold text-slate-500 mt-1 flex items-center gap-1.5">
                                 <Calendar className="w-3.5 h-3.5" /> {formatDateShort(parseDate(a.start))} — {formatDateShort(parseDate(a.end))}
@@ -453,7 +419,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-red-900 font-black text-lg">Konflikter fundet</h3>
-                  <p className="text-red-700 text-sm font-medium mb-4 tracking-tight">Følgende personer er tildelt vagter mens de har ønsket fravær:</p>
+                  <p className="text-red-700 text-sm font-medium mb-4">Vigtigt: Der er sammenfald mellem vagter og ferieønsker.</p>
                   <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {conflicts.map((c, i) => <li key={i} className="text-red-600 text-[11px] font-black flex items-center gap-2 bg-white/50 p-2 rounded-lg border border-red-100 uppercase"><ArrowRight className="w-3 h-3" /> {c}</li>)}
                   </ul>
@@ -510,7 +476,7 @@ export default function App() {
                             const conflict = abs && shift;
                             let bg = "";
                             if (conflict) bg = "bg-red-500";
-                            else if (shift) bg = "bg-blue-600";
+                            else if (shift) bg = "bg-blue-600 shadow-inner shadow-blue-900/20";
                             else if (abs?.type === 'vacation') bg = "bg-green-500";
                             else if (abs?.type === 'vagtfri') bg = "bg-amber-400";
 
@@ -528,12 +494,12 @@ export default function App() {
                     )}
                     {role === 'planner' && employees.length > 0 && (
                       <tr className="bg-slate-100/50 border-t-2 border-slate-200">
-                        <td className="sticky left-0 z-20 bg-slate-200 p-4 text-right font-black text-[10px] text-slate-500 uppercase border-r border-slate-200">Antal på ferie</td>
+                        <td className="sticky left-0 z-20 bg-slate-200 p-4 text-right font-black text-[10px] text-slate-500 uppercase border-r border-slate-200">Ferie total</td>
                         {periodDates.map((date, i) => {
                           const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
-                          const overLimit = count > maxAway;
+                          const isOver = count > maxAway;
                           return (
-                            <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${overLimit ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
+                            <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${isOver ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
                               {count > 0 ? count : '-'}
                             </td>
                           );
@@ -562,7 +528,7 @@ export default function App() {
                 
                 <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Vagtfordeling i alt
+                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Vagtfordeling pr. person
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
                     {employees.map(emp => {
@@ -572,7 +538,7 @@ export default function App() {
                           <p className="text-[10px] font-black text-slate-400 uppercase mb-2 truncate max-w-full">{emp.name}</p>
                           <div className="flex items-baseline gap-1">
                             <p className="text-3xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">{count}</p>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase">vagter</p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">stk</p>
                           </div>
                         </div>
                       );
@@ -588,7 +554,7 @@ export default function App() {
         {activeTab === 'staff' && role === 'planner' && (
           <div className="max-w-3xl mx-auto animate-in fade-in duration-500">
             <header className="mb-12 text-center">
-              <h1 className="text-4xl font-black text-slate-900 tracking-tight">Personalehåndtering</h1>
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight">Personalestyring</h1>
               <p className="text-slate-500 text-lg">Administrer listen over ansatte.</p>
             </header>
 
@@ -598,7 +564,7 @@ export default function App() {
                   <UserPlus className="absolute left-4 top-3.5 w-5 h-5 text-slate-300" />
                   <input type="text" placeholder="Navn på medarbejder..." value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                 </div>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-2xl text-sm font-black transition-all shadow-lg shadow-blue-100">Opret</button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-2xl text-sm font-black shadow-lg shadow-blue-100 transition-all active:scale-95">Opret</button>
               </form>
             </section>
 
@@ -636,3 +602,8 @@ export default function App() {
     </div>
   );
 }
+
+// Interfaces needed for Staff tracking
+interface Employee { id: string; name: string; }
+interface Absence { id: string; empId: string; type: string; start: string; end: string; }
+interface Shift { id: string; empId: string; date: string; }
