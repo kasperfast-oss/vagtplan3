@@ -95,7 +95,7 @@ export default function App() {
   // --- Tilstand ---
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<'planner' | 'employee'>('employee'); 
-  const [currentEmpId, setCurrentEmpId] = useState<string>(''); // Starter som tom for at tvinge valg
+  const [currentEmpId, setCurrentEmpId] = useState<string>(''); 
   const [activeTab, setActiveTab] = useState<'input' | 'calendar' | 'staff'>('input');
 
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -175,10 +175,8 @@ export default function App() {
     return found;
   }, [absences, weekendShifts, employees]);
 
-  // Filtrering af medarbejdere til kalendervisning
   const visibleEmployees = useMemo(() => {
     if (role === 'planner') return employees;
-    // Hvis medarbejder, vis kun dem selv (hvis valgt)
     return employees.filter(e => e.id === currentEmpId);
   }, [employees, role, currentEmpId]);
 
@@ -202,7 +200,6 @@ export default function App() {
     e.preventDefault();
     if (!absForm.start || !absForm.end) return;
     
-    // Sikkerhedscheck for medarbejder-ID
     const targetId = role === 'employee' ? currentEmpId : absForm.empId;
     if (!targetId) {
       alert("Vælg venligst dit navn før du gemmer.");
@@ -323,7 +320,6 @@ export default function App() {
               <p className="text-slate-500 font-medium">Indtast dine ønsker til sommerferien herunder.</p>
             </div>
 
-            {/* Formular */}
             <div className="lg:col-span-4 space-y-6">
               <section className={`bg-white rounded-3xl shadow-sm border p-8 overflow-hidden relative transition-all ${!currentEmpId && role === 'employee' ? 'border-red-100' : 'border-slate-200'}`}>
                 <div className={`absolute top-0 left-0 w-full h-1.5 ${!currentEmpId && role === 'employee' ? 'bg-red-400' : (absForm.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500')}`}></div>
@@ -401,12 +397,15 @@ export default function App() {
                       <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægningsslut</label>
                       <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Advarselsgrænse (Max fravær)</label>
+                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
                   </div>
                 </section>
               )}
             </div>
 
-            {/* Liste over ønsker */}
             <div className="lg:col-span-8">
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-8 border-b border-slate-100 flex justify-between items-center">
@@ -527,7 +526,7 @@ export default function App() {
                             return (
                               <td key={i} className={`p-0 border-r border-slate-100/30 h-14 ${isWeekend(date) && !bg ? 'bg-slate-50/40' : ''}`}>
                                 <div className={`w-full h-full flex items-center justify-center transition-all ${bg ? 'scale-[0.85] rounded-xl shadow-sm' : ''} ${bg}`}>
-                                  {shift && !conflict && <div className="w-1 h-1 bg-white rounded-full shadow-lg"></div>}
+                                  {shift && !conflict && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-lg"></div>}
                                   {conflict && <AlertTriangle className="w-4 h-4 text-white animate-pulse" />}
                                 </div>
                               </td>
@@ -535,6 +534,23 @@ export default function App() {
                           })}
                         </tr>
                       ))
+                    )}
+                    {/* Sammenfatning række (bruger maxAway for at løse TS-fejlen og give overblik) */}
+                    {role === 'planner' && employees.length > 0 && (
+                      <tr className="bg-slate-50/50 border-t-2 border-slate-200">
+                        <td className="sticky left-0 z-20 bg-slate-100 p-4 text-right font-black text-[10px] text-slate-400 uppercase border-r border-slate-200 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)]">
+                          Total på ferie
+                        </td>
+                        {periodDates.map((date, i) => {
+                          const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
+                          const overLimit = count > maxAway;
+                          return (
+                            <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${overLimit ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
+                              {count > 0 ? count : '-'}
+                            </td>
+                          );
+                        })}
+                      </tr>
                     )}
                   </tbody>
                 </table>
