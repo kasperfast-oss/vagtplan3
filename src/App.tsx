@@ -175,6 +175,13 @@ export default function App() {
     return found;
   }, [absences, weekendShifts, employees]);
 
+  // Filtrering af medarbejdere til kalendervisning
+  const visibleEmployees = useMemo(() => {
+    if (role === 'planner') return employees;
+    // Hvis medarbejder, vis kun dem selv (hvis valgt)
+    return employees.filter(e => e.id === currentEmpId);
+  }, [employees, role, currentEmpId]);
+
   // --- Handlinger ---
   const handleAddEmployee = async (e: FormEvent) => {
     e.preventDefault();
@@ -448,7 +455,7 @@ export default function App() {
         {/* --- CALENDAR VIEW --- */}
         {activeTab === 'calendar' && (
           <div className="space-y-8 animate-in fade-in duration-500">
-            {conflicts.length > 0 && (
+            {conflicts.length > 0 && role === 'planner' && (
               <div className="bg-red-50 border border-red-100 rounded-[2rem] p-8 flex gap-6">
                 <div className="bg-red-500 p-3 rounded-2xl text-white self-start">
                   <AlertTriangle className="w-6 h-6" />
@@ -494,33 +501,41 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {employees.map(emp => (
-                      <tr key={emp.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
-                        <td className={`sticky left-0 z-20 p-6 font-black text-sm border-r border-slate-100 transition-colors shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)] ${currentEmpId === emp.id ? 'bg-blue-50/50 text-blue-700' : 'bg-white text-slate-700'}`}>
-                          {emp.name}
+                    {visibleEmployees.length === 0 ? (
+                      <tr>
+                        <td colSpan={periodDates.length + 1} className="p-20 text-center text-slate-400 font-bold italic">
+                          Vælg dit navn i toppen for at se din personlige kalender.
                         </td>
-                        {periodDates.map((date, i) => {
-                          const abs = getAbsenceOnDate(date, emp.id);
-                          const shift = hasShiftOnDate(date, emp.id);
-                          const conflict = abs && shift;
-                          
-                          let bg = "";
-                          if (conflict) bg = "bg-red-500";
-                          else if (shift) bg = "bg-blue-600";
-                          else if (abs?.type === 'vacation') bg = "bg-green-500";
-                          else if (abs?.type === 'vagtfri') bg = "bg-amber-400";
-
-                          return (
-                            <td key={i} className={`p-0 border-r border-slate-100/30 h-14 ${isWeekend(date) && !bg ? 'bg-slate-50/40' : ''}`}>
-                              <div className={`w-full h-full flex items-center justify-center transition-all ${bg ? 'scale-[0.85] rounded-xl shadow-sm' : ''} ${bg}`}>
-                                {shift && !conflict && <div className="w-1 h-1 bg-white rounded-full shadow-lg"></div>}
-                                {conflict && <AlertTriangle className="w-4 h-4 text-white animate-pulse" />}
-                              </div>
-                            </td>
-                          )
-                        })}
                       </tr>
-                    ))}
+                    ) : (
+                      visibleEmployees.map(emp => (
+                        <tr key={emp.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors">
+                          <td className={`sticky left-0 z-20 p-6 font-black text-sm border-r border-slate-100 transition-colors shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)] ${currentEmpId === emp.id ? 'bg-blue-50/50 text-blue-700' : 'bg-white text-slate-700'}`}>
+                            {emp.name}
+                          </td>
+                          {periodDates.map((date, i) => {
+                            const abs = getAbsenceOnDate(date, emp.id);
+                            const shift = hasShiftOnDate(date, emp.id);
+                            const conflict = abs && shift;
+                            
+                            let bg = "";
+                            if (conflict) bg = "bg-red-500";
+                            else if (shift) bg = "bg-blue-600";
+                            else if (abs?.type === 'vacation') bg = "bg-green-500";
+                            else if (abs?.type === 'vagtfri') bg = "bg-amber-400";
+
+                            return (
+                              <td key={i} className={`p-0 border-r border-slate-100/30 h-14 ${isWeekend(date) && !bg ? 'bg-slate-50/40' : ''}`}>
+                                <div className={`w-full h-full flex items-center justify-center transition-all ${bg ? 'scale-[0.85] rounded-xl shadow-sm' : ''} ${bg}`}>
+                                  {shift && !conflict && <div className="w-1 h-1 bg-white rounded-full shadow-lg"></div>}
+                                  {conflict && <AlertTriangle className="w-4 h-4 text-white animate-pulse" />}
+                                </div>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
