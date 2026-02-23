@@ -8,7 +8,6 @@ import {
   Trash2, 
   CalendarDays,
   ShieldAlert,
-  CheckCircle2,
   Wand2,
   Settings,
   Lock,
@@ -155,13 +154,13 @@ export default function App() {
     return found;
   }, [absences, weekendShifts, employees]);
 
-  // Vigtigt: Begræns medarbejder-visning til dem selv
+  // Privatliv: Begræns medarbejder-visning til dem selv i matrixen
   const visibleEmployees = useMemo(() => {
     if (role === 'planner') return employees.sort((a,b) => a.name.localeCompare(b.name));
     return employees.filter(e => e.id === currentEmpId);
   }, [employees, role, currentEmpId]);
 
-  // Vigtigt: Begræns registreringer til dem selv i listen
+  // Privatliv: Begræns registreringer til dem selv i listen
   const displayAbsences = useMemo(() => {
     const list = role === 'planner' ? absences : absences.filter(a => a.empId === currentEmpId);
     return [...list].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime());
@@ -177,14 +176,16 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', id)); } catch (e: any) { console.error(e); }
+    if (window.confirm("Vil du slette medarbejderen? Dette fjerner også alle personens registreringer.")) {
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', id)); } catch (e: any) { console.error(e); }
+    }
   };
 
   const handleAddAbsence = async (e: FormEvent) => {
     e.preventDefault();
     if (!absForm.start || !absForm.end) return;
     const targetId = role === 'employee' ? currentEmpId : absForm.empId;
-    if (!targetId) { alert("Vælg venligst dit navn først."); return; }
+    if (!targetId) { alert("Vælg venligst et navn før du gemmer."); return; }
     const newId = Date.now().toString();
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', newId), { ...absForm, empId: targetId, id: newId });
     setAbsForm({ ...absForm, start: '', end: '', empId: '' });
@@ -219,7 +220,7 @@ export default function App() {
   };
 
   if (!user) return (
-    <div className="min-h-screen flex items-center justify-center bg-white text-slate-400">Indlæser...</div>
+    <div className="min-h-screen flex items-center justify-center bg-white text-slate-400 font-sans uppercase tracking-widest text-xs">Forbinder til skydatabase...</div>
   );
 
   return (
@@ -310,20 +311,20 @@ export default function App() {
                 <div className={`absolute top-0 left-0 w-full h-1.5 ${!currentEmpId && role === 'employee' ? 'bg-red-400' : (absForm.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500')}`}></div>
                 
                 <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ønske
+                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ferieønske
                 </h2>
 
                 {!currentEmpId && role === 'employee' ? (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6">
                     <p className="text-red-700 text-xs font-bold leading-tight flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 shrink-0" /> Du skal vælge dit navn i toppen først!
+                      <AlertTriangle className="w-5 h-5 shrink-0" /> Vælg dit navn i toppen først!
                     </p>
                   </div>
                 ) : role === 'employee' && (
                   <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 mb-6 flex items-center gap-3">
                     <UserCheck className="w-5 h-5 text-blue-600" />
                     <div>
-                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Aktiv profil</p>
+                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">Valgt profil</p>
                       <p className="text-blue-900 text-sm font-bold">{employees.find(e => e.id === currentEmpId)?.name}</p>
                     </div>
                   </div>
@@ -333,30 +334,24 @@ export default function App() {
                   {role === 'planner' && (
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Vælg Medarbejder</label>
-                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
                         <option value="">Vælg...</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
                   )}
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Ønsketype</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Type</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400'}`}>Ferie</button>
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>Vagtfri</button>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Fra</label>
-                      <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Til</label>
-                      <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />
-                    </div>
+                    <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
+                    <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                   </div>
-                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-xl shadow-blue-100 transition-all active:scale-95">Gem ønske</button>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-xl shadow-blue-100 active:scale-95">Gem ønske</button>
                 </form>
               </section>
 
@@ -369,11 +364,11 @@ export default function App() {
                   <form onSubmit={handleAddShift} className="space-y-6">
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Dato</label>
-                      <input type="date" value={shiftForm.date} onChange={e => setShiftForm({...shiftForm, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />
+                      <input type="date" value={shiftForm.date} onChange={e => setShiftForm({...shiftForm, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Vagttype</label>
-                      <select value={shiftForm.type} onChange={e => setShiftForm({...shiftForm, type: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                      <select value={shiftForm.type} onChange={e => setShiftForm({...shiftForm, type: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
                         <option value="7-vagt">7-vagt</option>
                         <option value="9-vagt">9-vagt</option>
                         <option value="15-vagt">15-vagt</option>
@@ -381,18 +376,18 @@ export default function App() {
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Medarbejder</label>
-                      <select value={shiftForm.empId} onChange={e => setShiftForm({...shiftForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                      <select value={shiftForm.empId} onChange={e => setShiftForm({...shiftForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none">
                         <option value="">Vælg...</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl text-sm font-black shadow-lg transition-all active:scale-95">Bekræft vagt</button>
+                    <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl text-sm font-black transition-all shadow-lg active:scale-95">Bekræft vagt</button>
                   </form>
                 </section>
               )}
             </div>
 
-            <div className="lg:col-span-8">
+            <div className="lg:col-span-8 space-y-6">
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden w-full">
                 <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-white">
                   <h2 className="font-black text-2xl text-slate-900">
@@ -423,22 +418,45 @@ export default function App() {
                               </p>
                             </div>
                           </div>
-                          {(role === 'planner' || a.empId === currentEmpId) && (
-                            <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          )}
+                          <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
                         </div>
                       )
                     })
                   )}
                 </div>
               </div>
+
+              {role === 'planner' && weekendShifts.length > 0 && (
+                <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-8 border-b border-slate-100">
+                    <h2 className="font-black text-xl text-slate-900">Aktuelle Weekendvagter</h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                    {weekendShifts.sort((a,b) => parseDate(a.date).getTime() - parseDate(b.date).getTime()).map(s => {
+                      const emp = employees.find(e => e.id === s.empId);
+                      return (
+                        <div key={s.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className="bg-blue-50 text-blue-600 p-2.5 rounded-xl font-black text-xs uppercase">{s.type}</div>
+                            <div>
+                              <p className="font-black text-slate-900 leading-none">{emp?.name}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">{getDayName(parseDate(s.date))}. {formatDateShort(parseDate(s.date))}</p>
+                            </div>
+                          </div>
+                          <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', s.id))} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* --- CALENDAR VIEW --- */}
+        {/* --- KALENDER --- */}
         {activeTab === 'calendar' && (
           <div className="space-y-8 animate-in fade-in duration-500">
             {conflicts.length > 0 && role === 'planner' && (
@@ -560,7 +578,7 @@ export default function App() {
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase mb-2 block tracking-widest">Max fravær pr. dag</label>
-                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(parseInt(e.target.value))} className="bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold text-white outline-none w-24 focus:ring-2 focus:ring-blue-500" />
+                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(parseInt(e.target.value) || 0)} className="bg-slate-800 border-none rounded-xl px-4 py-2 text-sm font-bold text-white outline-none w-24 focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
                 </div>
@@ -611,6 +629,7 @@ export default function App() {
         )}
       </main>
 
+      {/* Footer */}
       <footer className="h-24 flex items-center justify-center border-t border-slate-100 bg-white mt-auto">
         <button onClick={() => window.location.reload()} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest transition-all">
           <LogOut className="w-4 h-4" /> Nulstil session
