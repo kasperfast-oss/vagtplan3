@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 // Eksplicit type-only import for React hændelser (verbatimModuleSyntax)
-import type { FormEvent, ChangeEvent } from 'react';
+import type { FormEvent } from 'react';
 import { 
   Calendar, 
   AlertTriangle, 
-  Users, 
   Plus, 
   Trash2, 
   CalendarDays,
@@ -150,7 +149,21 @@ export default function App() {
     return () => unsubs.forEach(fn => fn());
   }, [user]);
 
-  // --- Logik ---
+  // --- Logik Hjælpere ---
+  const getAbsenceOnDate = (date: Date, empId: number) => {
+    const time = date.getTime();
+    return absences.find(a => 
+      a.empId === empId && 
+      parseDate(a.start).getTime() <= time && 
+      parseDate(a.end).getTime() >= time
+    );
+  };
+
+  const hasShiftOnDate = (date: Date, empId: number) => {
+    const dateStr = formatDateForInput(date);
+    return weekendShifts.some(s => s.empId === empId && s.date === dateStr);
+  };
+
   const periodDates = useMemo(() => {
     const dates: Date[] = [];
     let curr = parseDate(period.start);
@@ -276,7 +289,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-12">
-      {/* Top Bar - Rolle Skifter */}
+      {/* Top Bar */}
       <div className="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -316,7 +329,7 @@ export default function App() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 mt-8">
-        {/* Header Section */}
+        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div>
             <h1 className="text-4xl font-black text-slate-900 tracking-tight">
@@ -344,14 +357,10 @@ export default function App() {
           </div>
         </div>
 
-        {/* Tab Indhold: PLANLÆGNING */}
+        {/* Tab: PLANLÆGNING */}
         {activeTab === 'planning' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            
-            {/* Venstre Kolonne: Indstillinger & Formularer */}
             <div className="lg:col-span-1 space-y-6">
-              
-              {/* Periode Definition (Kun Planlægger) */}
               {role === 'planner' && (
                 <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                   <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -360,11 +369,11 @@ export default function App() {
                   <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="text-xs font-bold text-slate-500 mb-1 block">Startdato</label>
-                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                     </div>
                     <div>
                       <label className="text-xs font-bold text-slate-500 mb-1 block">Slutdato</label>
-                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                     </div>
                     <div>
                       <label className="text-xs font-bold text-slate-500 mb-1 block">Max medarbejdere på ferie</label>
@@ -374,7 +383,6 @@ export default function App() {
                 </section>
               )}
 
-              {/* Ferie/Vagtfri Input Formular */}
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
                 <div className={`absolute top-0 left-0 w-full h-1 ${absForm.type === 'vacation' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
                 <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -412,7 +420,6 @@ export default function App() {
                 </form>
               </section>
 
-              {/* Weekendvagt Formular (Kun Planlægger) */}
               {role === 'planner' && (
                 <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
                   <div className="absolute top-0 left-0 w-full h-1 bg-blue-600"></div>
@@ -447,9 +454,7 @@ export default function App() {
               )}
             </div>
 
-            {/* Højre Kolonne: Lister over registreringer */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Eksisterende Fravær */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                   <h2 className="text-lg font-black text-slate-900">Aktuelle Ønsker</h2>
@@ -468,7 +473,7 @@ export default function App() {
                       const isVacation = abs.type === 'vacation';
                       const isMine = role === 'employee' && abs.empId === currentEmpId;
                       const canDelete = role === 'planner' || isMine;
-                      if (role === 'employee' && !isMine && abs.type === 'vagtfri') return null; // Skjul andres vagtfri-ønsker
+                      if (role === 'employee' && !isMine && abs.type === 'vagtfri') return null;
 
                       return (
                         <div key={abs.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
@@ -498,7 +503,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Weekendvagt Liste (Kun hvis der er nogen) */}
               {weekendShifts.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="p-6 border-b border-slate-100">
@@ -533,11 +537,9 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab Indhold: OVERBLIK */}
+        {/* Tab: OVERBLIK */}
         {activeTab === 'overview' && (
           <div className="space-y-8 animate-in fade-in duration-500">
-            
-            {/* Advarsler Box */}
             {(conflicts.length > 0 || (role === 'planner' && absenceWarnings.length > 0)) && (
               <div className="bg-red-50 border border-red-100 rounded-2xl p-6 flex flex-col sm:flex-row gap-4">
                 <div className="bg-red-500 p-2 rounded-xl text-white self-start">
@@ -545,7 +547,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-red-900 font-black text-lg">Konflikter opdaget</h3>
-                  <p className="text-red-700 text-sm font-medium mb-3">Planen overholder ikke de opsatte regler eller har medarbejdere på vagt under ferie.</p>
+                  <p className="text-red-700 text-sm font-medium mb-3">Planen overholder ikke reglerne.</p>
                   <ul className="space-y-1">
                     {conflicts.map((c, i) => <li key={i} className="text-red-600 text-xs font-bold flex items-center gap-2"><ChevronRight className="w-3 h-3" /> {c.message}</li>)}
                     {role === 'planner' && absenceWarnings.map((w, i) => <li key={i} className="text-red-600 text-xs font-medium flex items-center gap-2"><ChevronRight className="w-3 h-3" /> {w}</li>)}
@@ -554,7 +556,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Selve Kalender Matrix */}
             <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4">
                 <h2 className="text-xl font-black text-slate-900">Vagtplan Matrix</h2>
@@ -608,7 +609,6 @@ export default function App() {
                         })}
                       </tr>
                     ))}
-                    {/* Opsamling i bunden */}
                     <tr className="bg-slate-50">
                       <td className="sticky left-0 z-20 bg-slate-50 p-3 text-right pr-4 text-[10px] font-black text-slate-400 uppercase border-r border-slate-200">På Ferie:</td>
                       {periodDates.map((date, i) => {
@@ -625,7 +625,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Statistik / Retfærdighedstjek */}
             <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
               <h2 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-blue-600" /> Vagtfordeling
@@ -642,20 +641,9 @@ export default function App() {
                 ))}
               </div>
             </section>
-
           </div>
         )}
       </div>
     </div>
   );
 }
-
-// --- Hjælpefunktioner flyttet ud for renere kode ---
-const getAbsenceOnDate = (date: Date, empId: number) => {
-  // Denne funktion genbruges af Matrix
-  // Bemærk: Vi bruger de faktiske state-værdier inde i komponenten, så her sender vi blot logikken tilbage
-};
-
-const hasShiftOnDate = (date: Date, empId: number) => {
-  // Samme her
-};
