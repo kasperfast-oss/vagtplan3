@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+// Eksplicit type-only import for React hændelser
+import type { FormEvent, ChangeEvent } from 'react';
 import { 
   Calendar, 
   AlertTriangle, 
@@ -17,8 +19,16 @@ import {
 
 // --- Firebase Cloud Storage Setup ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, User } from 'firebase/auth';
+
+// Importer kun funktioner (værdier) fra Auth
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+// Importer kun typer fra Auth (Løser TS1484)
+import type { User } from 'firebase/auth';
+
+// Importer kun funktioner fra Firestore
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+// Importer kun typer fra Firestore
+import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
 
 // --- TypeScript Interfaces ---
 interface Absence {
@@ -53,28 +63,28 @@ const db = getFirestore(app);
 const appId = 'vagtplan-47257';
 
 // --- Hælperfunktioner til datoer ---
-const parseDate = (dateString: string) => {
+const parseDate = (dateString: string): Date => {
   if (!dateString) return new Date();
   const [y, m, d] = dateString.split('-');
   return new Date(Number(y), Number(m) - 1, Number(d));
 };
 
-const formatDateForInput = (date: Date) => {
+const formatDateForInput = (date: Date): string => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
 
-const formatDateShort = (date: Date) => {
+const formatDateShort = (date: Date): string => {
   return date.toLocaleDateString('da-DK', { day: 'numeric', month: 'short' });
 };
 
-const getDayName = (date: Date) => {
+const getDayName = (date: Date): string => {
   return date.toLocaleDateString('da-DK', { weekday: 'short' });
 };
 
-const isWeekend = (date: Date) => {
+const isWeekend = (date: Date): boolean => {
   const day = date.getDay();
   return day === 0 || day === 6; // 0 = Søndag, 6 = Lørdag
 };
@@ -115,13 +125,13 @@ export default function App() {
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Fejl ved initialisering af Auth:", error);
       }
     };
     initAuth();
     
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsubscribe();
   }, []);
 
@@ -130,18 +140,20 @@ export default function App() {
     const unsubs: (() => void)[] = [];
 
     try {
+      // Lyt efter fravær
       const absRef = collection(db, 'artifacts', appId, 'public', 'data', 'absences');
-      unsubs.push(onSnapshot(absRef, (snapshot) => {
+      unsubs.push(onSnapshot(absRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Absence));
         setAbsences(data);
-      }, (error) => console.error("Fejl ved hentning af fravær:", error)));
+      }, (error: any) => console.error("Fejl ved hentning af fravær:", error)));
 
+      // Lyt efter vagter
       const shiftsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
-      unsubs.push(onSnapshot(shiftsRef, (snapshot) => {
+      unsubs.push(onSnapshot(shiftsRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Shift));
         setWeekendShifts(data);
-      }, (error) => console.error("Fejl ved hentning af vagter:", error)));
-    } catch (error) {
+      }, (error: any) => console.error("Fejl ved hentning af vagter:", error)));
+    } catch (error: any) {
       console.error("Fejl ved opsætning af Firestore listeners:", error);
     }
 
@@ -220,7 +232,7 @@ export default function App() {
   }, [shiftForm.date, absences]);
 
   // --- Handlinger ---
-  const handleAddAbsence = async (e: React.FormEvent) => {
+  const handleAddAbsence = async (e: FormEvent) => {
     e.preventDefault();
     if (!absForm.start || !absForm.end) return alert('Vælg venligst både start- og slutdato.');
     if (parseDate(absForm.start).getTime() > parseDate(absForm.end).getTime()) return alert('Startdato skal være før slutdato.');
@@ -235,7 +247,7 @@ export default function App() {
         id: newId 
       });
       setAbsForm({ ...absForm, start: '', end: '' });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Fejl ved gemning af fravær:", err);
       alert("Der opstod en fejl ved gemning i skyen.");
     }
@@ -244,13 +256,13 @@ export default function App() {
   const handleDeleteAbsence = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', id));
-    } catch (err) {
+    } catch (err: any) {
       console.error("Fejl ved sletning:", err);
       alert("Der opstod en fejl ved sletning fra skyen.");
     }
   };
 
-  const handleShiftDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleShiftDateChange = (e: ChangeEvent<HTMLInputElement>) => {
     const newDate = e.target.value;
     if (!newDate) {
       setShiftForm({ date: '', empId: 0 });
@@ -270,7 +282,7 @@ export default function App() {
     setShiftForm({ date: newDate, empId: available.length > 0 ? available[0].id : 0 });
   };
 
-  const handleAddShift = async (e: React.FormEvent) => {
+  const handleAddShift = async (e: FormEvent) => {
     e.preventDefault();
     if (!shiftForm.date) return alert('Vælg venligst en dato for vagten.');
     if (!shiftForm.empId || shiftForm.empId === 0) return alert('Vælg venligst en ledig medarbejder.');
@@ -288,7 +300,7 @@ export default function App() {
         id: newId 
       });
       setShiftForm({ empId: 0, date: '' });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Fejl ved tildeling af vagt:", err);
     }
   };
@@ -296,7 +308,7 @@ export default function App() {
   const handleDeleteShift = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', id));
-    } catch (err) {
+    } catch (err: any) {
       console.error("Fejl ved sletning af vagt:", err);
     }
   };
@@ -335,7 +347,7 @@ export default function App() {
           });
           currentCounts[selectedEmp.id] = (currentCounts[selectedEmp.id] || 0) + 1;
           addedCount++;
-        } catch (err) {
+        } catch (err: any) {
           console.error(err);
         }
       }
@@ -362,7 +374,7 @@ export default function App() {
     link.click();
   };
 
-  // --- Hjælpefunktioner ---
+  // --- Hjælpefunktioner til overblik ---
   const getAbsenceOnDate = (date: Date, empId: number) => {
     const time = date.getTime();
     return absences.find(a => a.empId === empId && time >= parseDate(a.start).getTime() && time <= parseDate(a.end).getTime());
@@ -423,7 +435,7 @@ export default function App() {
               Ferie- & Vagtplanlægger
             </h1>
             <p className="text-slate-500 mt-1">
-              {role === 'planner' ? 'Styr ferieønsker og weekendvagter for afdelingen (Sky-synkroniseret).' : 'Indtast dine ferieønsker og se vagtplanen.'}
+              {role === 'planner' ? 'Styr ferieønsker og weekendvagter (Sky-synkroniseret).' : 'Indtast dine ferieønsker og se vagtplanen.'}
             </p>
           </div>
 
@@ -432,13 +444,13 @@ export default function App() {
               onClick={() => setActiveTab('planning')}
               className={`px-4 py-2 rounded-md font-medium transition-colors ${activeTab === 'planning' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
             >
-              Planlægning & Input
+              Planlægning
             </button>
             <button 
               onClick={() => setActiveTab('overview')}
               className={`px-4 py-2 rounded-md font-medium transition-colors ${activeTab === 'overview' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
             >
-              Kalenderoverblik
+              Overblik
             </button>
           </div>
           
@@ -457,12 +469,10 @@ export default function App() {
         {activeTab === 'planning' && (
           <div className="space-y-6">
             
-            {/* Indstillinger for periode (Kun planlægger) */}
             {role === 'planner' && (
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-slate-400" />
-                  Definer Planlægningsperiode
+                  <Calendar className="w-5 h-5 text-slate-400" /> Indstillinger
                 </h2>
                 <div className="flex flex-wrap gap-4 items-end">
                   <div>
@@ -475,7 +485,7 @@ export default function App() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
-                      <Settings className="w-4 h-4 text-slate-400" /> Advarselsgrænse for ferie
+                      <Settings className="w-4 h-4 text-slate-400" /> Max væk af gangen
                     </label>
                     <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-32 border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
@@ -489,7 +499,7 @@ export default function App() {
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                   <Users className={`w-5 h-5 ${role === 'employee' ? 'text-green-600' : 'text-green-500'}`} />
-                  {role === 'planner' ? 'Indtast Ferie & Vagtfriønsker' : 'Mine Anmodninger'}
+                  {role === 'planner' ? 'Indtast Ferie & Vagtfriønsker' : 'Mine Ønsker'}
                 </h2>
                 
                 <form onSubmit={handleAddAbsence} className="space-y-4 mb-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
@@ -503,7 +513,7 @@ export default function App() {
                       </div>
                     )}
                     <div className="flex-1">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Type fravær</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
                       <select value={absForm.type} onChange={e => setAbsForm({...absForm, type: e.target.value})} className="w-full border border-slate-300 rounded-lg px-4 py-2 bg-white outline-none">
                         <option value="vacation">Ferie</option>
                         <option value="vagtfri">Ønsker vagtfri</option>
@@ -512,29 +522,28 @@ export default function App() {
                   </div>
                   <div className="flex gap-4">
                     <div className="flex-1">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Fra dato</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Fra</label>
                       <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full border border-slate-300 rounded-lg px-4 py-2" />
                     </div>
                     <div className="flex-1">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Til dato</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Til</label>
                       <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full border border-slate-300 rounded-lg px-4 py-2" />
                     </div>
                   </div>
                   <button type="submit" className={`w-full text-white font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${absForm.type === 'vacation' ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
-                    <Plus className="w-4 h-4" /> Tilføj {absForm.type === 'vacation' ? 'Ferie' : 'Vagtfri'}
+                    <Plus className="w-4 h-4" /> Tilføj
                   </button>
                 </form>
 
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
                   {absences.length === 0 ? (
-                    <p className="text-slate-400 text-sm text-center py-4">Ingen fravær indtastet endnu.</p>
+                    <p className="text-slate-400 text-sm text-center py-4">Ingen data indtastet.</p>
                   ) : (
                     [...absences].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime()).map(abs => {
                       const emp = EMPLOYEES.find(e => e.id === abs.empId);
                       const isVacation = abs.type === 'vacation';
                       const isMine = role === 'employee' && abs.empId === currentEmpId;
                       const canDelete = role === 'planner' || isMine;
-
                       const opacityClass = (role === 'employee' && !isMine) ? 'opacity-60' : '';
 
                       return (
@@ -560,64 +569,58 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Weekendvagter Input (Kun for Planlægger) */}
+              {/* Weekendvagter (Kun Planlægger) */}
               {role === 'planner' && (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                   <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-blue-500" />
-                    Fordel Weekendvagter
+                    <ShieldAlert className="w-5 h-5 text-blue-500" /> Weekendvagter
                   </h2>
                   
                   <form onSubmit={handleAddShift} className="space-y-4 mb-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Dato for vagt</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Dato</label>
                       <input type="date" value={shiftForm.date} onChange={handleShiftDateChange} className="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Medarbejder</label>
                       <select value={shiftForm.empId} onChange={e => setShiftForm({...shiftForm, empId: Number(e.target.value)})} className="w-full border border-slate-300 rounded-lg px-4 py-2 bg-white disabled:bg-slate-100 disabled:text-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" disabled={!shiftForm.date || availableEmployeesForShift.length === 0}>
                         {!shiftForm.date && <option value="0">Vælg dato først</option>}
-                        {shiftForm.date && availableEmployeesForShift.length === 0 && <option value="0">Ingen ledige medarbejdere</option>}
+                        {shiftForm.date && availableEmployeesForShift.length === 0 && <option value="0">Ingen ledige</option>}
                         {availableEmployeesForShift.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                       </select>
                     </div>
-                    <button type="submit" disabled={!shiftForm.date || !shiftForm.empId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors">
-                      <Plus className="w-4 h-4" /> Tildel Vagt
+                    <button type="submit" disabled={!shiftForm.date || !shiftForm.empId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors">
+                      <Plus className="w-4 h-4" /> Tildel
                     </button>
                   </form>
 
                   <div className="mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center justify-between">
                     <div className="text-sm text-blue-800">
-                      <p className="font-semibold">Automatisk fordeling</p>
-                      <p className="text-xs mt-0.5 opacity-90">Udfylder automatisk tomme weekenddage.</p>
+                      <p className="font-semibold">Auto-fordeling</p>
+                      <p className="text-xs mt-0.5 opacity-90">Udfyld automatisk tomme weekender.</p>
                     </div>
-                    <button onClick={handleAutoDistribute} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap">
-                      <Wand2 className="w-4 h-4" /> Kør Auto-fordeling
+                    <button onClick={handleAutoDistribute} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
+                      <Wand2 className="w-4 h-4" /> Kør
                     </button>
                   </div>
 
                   <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                    {weekendShifts.length === 0 ? (
-                      <p className="text-slate-400 text-sm text-center py-4">Ingen vagter tildelt endnu.</p>
-                    ) : (
-                      [...weekendShifts].sort((a,b) => parseDate(a.date).getTime() - parseDate(b.date).getTime()).map(shift => {
-                        const emp = EMPLOYEES.find(e => e.id === shift.empId);
-                        const shiftDate = parseDate(shift.date);
-                        return (
-                          <div key={shift.id} className="flex justify-between items-center bg-white border border-slate-200 p-3 rounded-lg">
-                            <div>
-                              <span className="font-medium text-slate-800">{emp?.name}</span>
-                              <span className="text-sm text-slate-500 block">
-                                {getDayName(shiftDate)}. {formatDateShort(shiftDate)}
-                              </span>
-                            </div>
-                            <button onClick={() => handleDeleteShift(shift.id)} className="text-red-400 hover:text-red-600 p-2">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                    {[...weekendShifts].sort((a,b) => parseDate(a.date).getTime() - parseDate(b.date).getTime()).map(shift => {
+                      const emp = EMPLOYEES.find(e => e.id === shift.empId);
+                      return (
+                        <div key={shift.id} className="flex justify-between items-center bg-white border border-slate-200 p-3 rounded-lg">
+                          <div>
+                            <span className="font-medium text-slate-800">{emp?.name}</span>
+                            <span className="text-sm text-slate-500 block">
+                              {getDayName(parseDate(shift.date))}. {formatDateShort(parseDate(shift.date))}
+                            </span>
                           </div>
-                        )
-                      })
-                    )}
+                          <button onClick={() => handleDeleteShift(shift.id)} className="text-red-400 hover:text-red-600 p-2">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -633,7 +636,7 @@ export default function App() {
               <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-5 h-5 text-red-600" />
-                  <h3 className="text-red-800 font-bold">Opmærksomhed kræves i planlægningen!</h3>
+                  <h3 className="text-red-800 font-bold">Opmærksomhed påkrævet!</h3>
                 </div>
                 <ul className="list-disc list-inside text-red-700 space-y-1">
                   {conflicts.map((conf, idx) => <li key={`conf-${idx}`} className="text-sm font-semibold">{conf.message}</li>)}
@@ -644,11 +647,11 @@ export default function App() {
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
               <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h2 className="font-semibold text-slate-800">Kalenderoverblik</h2>
+                <h2 className="font-semibold text-slate-800">Vagtplan</h2>
                 <div className="flex gap-4 text-sm flex-wrap">
                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-green-400 rounded-sm"></div> Ferie</div>
                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-yellow-400 rounded-sm"></div> Vagtfri</div>
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div> Weekendvagt</div>
+                  <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div> Vagt</div>
                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded-sm"></div> Konflikt</div>
                 </div>
               </div>
@@ -657,17 +660,14 @@ export default function App() {
                 <div className="min-w-max">
                   <div className="flex border-b border-slate-200">
                     <div className="w-32 flex-shrink-0 p-3 bg-white sticky left-0 z-10 border-r border-slate-200">
-                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Medarbejder</span>
+                      <span className="text-xs font-semibold text-slate-400 uppercase">Medarbejder</span>
                     </div>
-                    {periodDates.map((date, i) => {
-                      const weekend = isWeekend(date);
-                      return (
-                        <div key={i} className={`w-10 flex-shrink-0 flex flex-col items-center justify-center py-2 border-r border-slate-100 ${weekend ? 'bg-slate-100' : 'bg-white'}`}>
-                          <span className="text-[10px] text-slate-500 uppercase">{getDayName(date).charAt(0)}</span>
-                          <span className={`text-xs font-semibold ${weekend ? 'text-slate-700' : 'text-slate-900'}`}>{date.getDate()}</span>
-                        </div>
-                      )
-                    })}
+                    {periodDates.map((date, i) => (
+                      <div key={i} className={`w-10 flex-shrink-0 flex flex-col items-center justify-center py-2 border-r border-slate-100 ${isWeekend(date) ? 'bg-slate-100' : 'bg-white'}`}>
+                        <span className="text-[10px] text-slate-500 uppercase">{getDayName(date).charAt(0)}</span>
+                        <span className="text-xs font-semibold text-slate-900">{date.getDate()}</span>
+                      </div>
+                    ))}
                   </div>
 
                   {EMPLOYEES.map(emp => (
@@ -684,17 +684,17 @@ export default function App() {
                         const weekend = isWeekend(date);
 
                         let bgColor = weekend ? 'bg-slate-50' : 'bg-white';
-                        if (isConflict) bgColor = 'bg-red-500 border-red-600 z-0';
-                        else if (hasShift) bgColor = 'bg-blue-500 border-blue-600 z-0';
-                        else if (isVacation) bgColor = 'bg-green-400 border-green-500 z-0';
-                        else if (isVagtfri) bgColor = 'bg-yellow-400 border-yellow-500 z-0';
+                        if (isConflict) bgColor = 'bg-red-500';
+                        else if (hasShift) bgColor = 'bg-blue-500';
+                        else if (isVacation) bgColor = 'bg-green-400';
+                        else if (isVagtfri) bgColor = 'bg-yellow-400';
 
                         return (
                           <div key={i} className={`w-10 flex-shrink-0 border-r border-slate-100 relative ${bgColor}`}>
                             {isVacation && !hasShift && !isConflict && <div className="absolute inset-y-1 inset-x-0 bg-green-400 opacity-80"></div>}
                             {isVagtfri && !hasShift && !isConflict && <div className="absolute inset-y-1 inset-x-0 bg-yellow-400 opacity-80"></div>}
-                            {hasShift && !isConflict && <div className="absolute inset-2 rounded-sm bg-blue-500 shadow-sm flex items-center justify-center"><div className="w-1.5 h-1.5 bg-white rounded-full"></div></div>}
-                            {isConflict && <div className="absolute inset-1 rounded-sm bg-red-500 shadow-sm flex items-center justify-center animate-pulse"><AlertTriangle className="w-3 h-3 text-white" /></div>}
+                            {hasShift && !isConflict && <div className="absolute inset-2 rounded-sm bg-blue-500 flex items-center justify-center"><div className="w-1 h-1 bg-white rounded-full"></div></div>}
+                            {isConflict && <div className="absolute inset-1 rounded-sm bg-red-500 flex items-center justify-center animate-pulse"><AlertTriangle className="w-3 h-3 text-white" /></div>}
                           </div>
                         )
                       })}
@@ -721,8 +721,7 @@ export default function App() {
 
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-slate-500" />
-                Vagtfordeling (Retfærdighedstjek)
+                <CheckCircle2 className="w-5 h-5 text-slate-500" /> Statistik
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                 {EMPLOYEES.map(emp => (
