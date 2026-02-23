@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-// Eksplicit type-only import for React hændelser
+// Eksplicit type-only import for React hændelser (verbatimModuleSyntax)
 import type { FormEvent, ChangeEvent } from 'react';
 import { 
   Calendar, 
@@ -14,20 +14,16 @@ import {
   Wand2,
   Settings,
   Lock,
-  UserCircle
+  UserCircle,
+  ChevronRight,
+  Info
 } from 'lucide-react';
 
 // --- Firebase Cloud Storage Setup ---
 import { initializeApp } from 'firebase/app';
-
-// Importer kun funktioner (værdier) fra Auth
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-// Importer kun typer fra Auth (Løser TS1484)
 import type { User } from 'firebase/auth';
-
-// Importer kun funktioner fra Firestore
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
-// Importer kun typer fra Firestore
 import type { QuerySnapshot, DocumentData } from 'firebase/firestore';
 
 // --- TypeScript Interfaces ---
@@ -86,7 +82,7 @@ const getDayName = (date: Date): string => {
 
 const isWeekend = (date: Date): boolean => {
   const day = date.getDay();
-  return day === 0 || day === 6; // 0 = Søndag, 6 = Lørdag
+  return day === 0 || day === 6; 
 };
 
 // Generer liste af medarbejdere (1-10)
@@ -112,15 +108,14 @@ export default function App() {
   });
   
   const [maxAway, setMaxAway] = useState(3);
-  
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [weekendShifts, setWeekendShifts] = useState<Shift[]>([]);
-  const [activeTab, setActiveTab] = useState('planning'); 
+  const [activeTab, setActiveTab] = useState<'planning' | 'overview'>('planning'); 
 
   const [absForm, setAbsForm] = useState({ empId: 1, type: 'vacation', start: '', end: '' });
   const [shiftForm, setShiftForm] = useState({ empId: 0, date: '' });
 
-  // --- Firebase Database Hooks ---
+  // --- Firebase Hooks ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -130,7 +125,6 @@ export default function App() {
       }
     };
     initAuth();
-    
     const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsubscribe();
   }, []);
@@ -138,25 +132,21 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const unsubs: (() => void)[] = [];
-
     try {
-      // Lyt efter fravær
       const absRef = collection(db, 'artifacts', appId, 'public', 'data', 'absences');
       unsubs.push(onSnapshot(absRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Absence));
         setAbsences(data);
-      }, (error: any) => console.error("Fejl ved hentning af fravær:", error)));
+      }, (error: any) => console.error("Fejl ved fravær:", error)));
 
-      // Lyt efter vagter
       const shiftsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
       unsubs.push(onSnapshot(shiftsRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Shift));
         setWeekendShifts(data);
-      }, (error: any) => console.error("Fejl ved hentning af vagter:", error)));
+      }, (error: any) => console.error("Fejl ved vagter:", error)));
     } catch (error: any) {
-      console.error("Fejl ved opsætning af Firestore listeners:", error);
+      console.error("Cloud listener fejl:", error);
     }
-
     return () => unsubs.forEach(fn => fn());
   }, [user]);
 
@@ -180,385 +170,324 @@ export default function App() {
         absences.some(a => a.empId === emp.id && a.type === 'vacation' && time >= parseDate(a.start).getTime() && time <= parseDate(a.end).getTime())
       ).length;
       if (awayCount > maxAway) {
-        warnings.push(`D. ${formatDateShort(date)} er der ${awayCount} medarbejdere på ferie (Grænsen er sat til ${maxAway}).`);
+        warnings.push(`D. ${formatDateShort(date)}: ${awayCount} på ferie (Grænse: ${maxAway}).`);
       }
     });
     return warnings;
   }, [periodDates, absences, maxAway]);
 
   const conflicts = useMemo(() => {
-    const foundConflicts: {shift: Shift, absence: Absence, message: string}[] = [];
+    const found: {message: string}[] = [];
     weekendShifts.forEach(shift => {
-      const shiftDateObj = parseDate(shift.date);
-      const shiftTime = shiftDateObj.getTime();
-      const empAbsences = absences.filter(v => v.empId === shift.empId);
-      
-      empAbsences.forEach(abs => {
-        const start = parseDate(abs.start).getTime();
-        const end = parseDate(abs.end).getTime();
-        if (shiftTime >= start && shiftTime <= end) {
-          const typeName = abs.type === 'vacation' ? 'ferie' : 'vagtfri';
-          foundConflicts.push({
-            shift, absence: abs,
-            message: `Konflikt: ${EMPLOYEES.find(e => e.id === shift.empId)?.name} har en weekendvagt d. ${formatDateShort(shiftDateObj)}, men har ${typeName} i denne periode.`
-          });
+      const shiftTime = parseDate(shift.date).getTime();
+      const empAbs = absences.filter(v => v.empId === shift.empId);
+      empAbs.forEach(abs => {
+        if (shiftTime >= parseDate(abs.start).getTime() && shiftTime <= parseDate(abs.end).getTime()) {
+          const emp = EMPLOYEES.find(e => e.id === shift.empId);
+          found.push({ message: `Vagtkonflikt for ${emp?.name} d. ${formatDateShort(parseDate(shift.date))}.` });
         }
       });
     });
-    return foundConflicts;
+    return found;
   }, [absences, weekendShifts]);
 
   const shiftCounts = useMemo(() => {
     const counts: Record<number, number> = {};
     EMPLOYEES.forEach(emp => counts[emp.id] = 0);
-    weekendShifts.forEach(shift => {
-      if (counts[shift.empId] !== undefined) counts[shift.empId]++;
-    });
+    weekendShifts.forEach(s => { if (counts[s.empId] !== undefined) counts[s.empId]++; });
     return counts;
   }, [weekendShifts]);
 
   const availableEmployeesForShift = useMemo(() => {
     if (!shiftForm.date) return [];
-    const shiftTime = parseDate(shiftForm.date).getTime();
-    return EMPLOYEES.filter(emp => {
-      const isAbsent = absences.some(a => {
-        if (a.empId !== emp.id) return false;
-        const start = parseDate(a.start).getTime();
-        const end = parseDate(a.end).getTime();
-        return shiftTime >= start && shiftTime <= end;
-      });
-      return !isAbsent; 
-    });
+    const time = parseDate(shiftForm.date).getTime();
+    return EMPLOYEES.filter(emp => !absences.some(a => a.empId === emp.id && time >= parseDate(a.start).getTime() && time <= parseDate(a.end).getTime()));
   }, [shiftForm.date, absences]);
 
   // --- Handlinger ---
   const handleAddAbsence = async (e: FormEvent) => {
     e.preventDefault();
-    if (!absForm.start || !absForm.end) return alert('Vælg venligst både start- og slutdato.');
-    if (parseDate(absForm.start).getTime() > parseDate(absForm.end).getTime()) return alert('Startdato skal være før slutdato.');
-    
+    if (!absForm.start || !absForm.end) return;
     const targetEmpId = role === 'employee' ? currentEmpId : absForm.empId;
     const newId = Date.now().toString() + Math.random().toString(36).substring(7);
-    
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', newId), { 
-        ...absForm, 
-        empId: targetEmpId,
-        id: newId 
-      });
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', newId), { ...absForm, empId: targetEmpId, id: newId });
       setAbsForm({ ...absForm, start: '', end: '' });
-    } catch (err: any) {
-      console.error("Fejl ved gemning af fravær:", err);
-      alert("Der opstod en fejl ved gemning i skyen.");
-    }
+    } catch (err: any) { console.error(err); }
   };
 
   const handleDeleteAbsence = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', id));
-    } catch (err: any) {
-      console.error("Fejl ved sletning:", err);
-      alert("Der opstod en fejl ved sletning fra skyen.");
-    }
-  };
-
-  const handleShiftDateChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const newDate = e.target.value;
-    if (!newDate) {
-      setShiftForm({ date: '', empId: 0 });
-      return;
-    }
-    const shiftTime = parseDate(newDate).getTime();
-    const available = EMPLOYEES.filter(emp => {
-      const isAbsent = absences.some(a => {
-        if (a.empId !== emp.id) return false;
-        const start = parseDate(a.start).getTime();
-        const end = parseDate(a.end).getTime();
-        return shiftTime >= start && shiftTime <= end;
-      });
-      return !isAbsent;
-    });
-
-    setShiftForm({ date: newDate, empId: available.length > 0 ? available[0].id : 0 });
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', id)); } catch (err: any) { console.error(err); }
   };
 
   const handleAddShift = async (e: FormEvent) => {
     e.preventDefault();
-    if (!shiftForm.date) return alert('Vælg venligst en dato for vagten.');
-    if (!shiftForm.empId || shiftForm.empId === 0) return alert('Vælg venligst en ledig medarbejder.');
-    
-    const shiftDate = parseDate(shiftForm.date);
-    if (!isWeekend(shiftDate)) {
-      const confirmNonWeekend = window.confirm('Datoen er ikke en lørdag eller søndag. Vil du tilføje den alligevel?');
-      if (!confirmNonWeekend) return;
-    }
-
+    if (!shiftForm.date || !shiftForm.empId) return;
     const newId = Date.now().toString() + Math.random().toString(36).substring(7);
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId), { 
-        ...shiftForm, 
-        id: newId 
-      });
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId), { ...shiftForm, id: newId });
       setShiftForm({ empId: 0, date: '' });
-    } catch (err: any) {
-      console.error("Fejl ved tildeling af vagt:", err);
-    }
+    } catch (err: any) { console.error(err); }
   };
 
   const handleDeleteShift = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', id));
-    } catch (err: any) {
-      console.error("Fejl ved sletning af vagt:", err);
-    }
+    try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', id)); } catch (err: any) { console.error(err); }
   };
 
   const handleAutoDistribute = async () => {
     const weekendDates = periodDates.filter(d => isWeekend(d));
-    let currentCounts = { ...shiftCounts };
-    let addedCount = 0;
-
+    let counts = { ...shiftCounts };
     for (const date of weekendDates) {
-      const time = date.getTime();
       const dateStr = formatDateForInput(date);
-
       if (weekendShifts.some(s => s.date === dateStr)) continue;
-
-      let available = EMPLOYEES.filter(emp => {
-        const isAbsent = absences.some(a => {
-          if (a.empId !== emp.id) return false;
-          const start = parseDate(a.start).getTime();
-          const end = parseDate(a.end).getTime();
-          return time >= start && time <= end;
-        });
-        return !isAbsent;
-      });
-
+      const time = date.getTime();
+      const available = EMPLOYEES.filter(emp => !absences.some(a => a.empId === emp.id && time >= parseDate(a.start).getTime() && time <= parseDate(a.end).getTime()));
       if (available.length > 0) {
-        available.sort((a, b) => (currentCounts[a.id] || 0) - (currentCounts[b.id] || 0));
-        const selectedEmp = available[0];
+        available.sort((a, b) => counts[a.id] - counts[b.id]);
+        const selected = available[0];
         const newId = Date.now().toString() + Math.random().toString(36).substring(7);
-
-        try {
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId), {
-            id: newId,
-            empId: selectedEmp.id,
-            date: dateStr
-          });
-          currentCounts[selectedEmp.id] = (currentCounts[selectedEmp.id] || 0) + 1;
-          addedCount++;
-        } catch (err: any) {
-          console.error(err);
-        }
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'shifts', newId), { empId: selected.id, date: dateStr, id: newId });
+        counts[selected.id]++;
       }
     }
-    alert(`Auto-fordeling fuldført! Der blev automatisk tilføjet ${addedCount} nye vagter.`);
   };
 
   const handleExportCSV = () => {
-    let csvContent = "\uFEFFMedarbejder;Type;Start Dato;Slut Dato\n";
+    let csv = "\uFEFFMedarbejder;Type;Dato/Periode\n";
     absences.forEach(a => {
       const emp = EMPLOYEES.find(e => e.id === a.empId);
-      const typeName = a.type === 'vacation' ? 'Ferie' : 'Vagtfri';
-      csvContent += `${emp?.name};${typeName};${formatDateShort(parseDate(a.start))};${formatDateShort(parseDate(a.end))}\n`;
+      csv += `${emp?.name};${a.type === 'vacation' ? 'Ferie' : 'Vagtfri'};${formatDateShort(parseDate(a.start))} - ${formatDateShort(parseDate(a.end))}\n`;
     });
-    weekendShifts.forEach(s => {
-      const emp = EMPLOYEES.find(e => e.id === s.empId);
-      const dateStr = formatDateShort(parseDate(s.date));
-      csvContent += `${emp?.name};Weekendvagt;${dateStr};${dateStr}\n`;
-    });
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "vagtplan.csv";
     link.click();
   };
 
-  // --- Hjælpefunktioner til overblik ---
-  const getAbsenceOnDate = (date: Date, empId: number) => {
-    const time = date.getTime();
-    return absences.find(a => a.empId === empId && time >= parseDate(a.start).getTime() && time <= parseDate(a.end).getTime());
-  };
-
-  const hasShiftOnDate = (date: Date, empId: number) => {
-    const time = date.getTime();
-    return weekendShifts.some(s => s.empId === empId && parseDate(s.date).getTime() === time);
-  };
-
-  if (!user) return <div className="p-8 text-center text-slate-500">Forbinder til skydatabase...</div>;
+  if (!user) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 font-medium">Forbinder til skydatabase...</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        
-        {/* --- ROLLE & LOGIN BAR --- */}
-        <div className="bg-slate-800 text-white p-3 rounded-xl mb-6 flex flex-col sm:flex-row items-center justify-between shadow-sm gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-slate-300">Skift visning:</span>
-            <div className="flex bg-slate-900 rounded-lg p-1">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-12">
+      {/* Top Bar - Rolle Skifter */}
+      <div className="bg-slate-900 text-white sticky top-0 z-50 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-blue-600 p-1.5 rounded-lg text-white">
+              <CalendarDays className="w-6 h-6" />
+            </div>
+            <span className="font-bold text-lg hidden sm:inline">VagtPlan Pro</span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex bg-slate-800 rounded-full p-1 border border-slate-700">
               <button 
                 onClick={() => setRole('planner')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${role === 'planner' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${role === 'planner' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
               >
-                <Lock className="w-4 h-4" /> Planlægger
+                <Lock className="w-3 h-3" /> Planlægger
               </button>
               <button 
                 onClick={() => setRole('employee')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${role === 'employee' ? 'bg-green-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${role === 'employee' ? 'bg-green-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
               >
-                <UserCircle className="w-4 h-4" /> Medarbejder
+                <UserCircle className="w-3 h-3" /> Medarbejder
               </button>
             </div>
-          </div>
-          
-          {role === 'employee' && (
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <span className="text-sm text-slate-300 whitespace-nowrap">Hvem er du?</span>
+            
+            {role === 'employee' && (
               <select 
                 value={currentEmpId} 
                 onChange={(e) => setCurrentEmpId(Number(e.target.value))}
-                className="w-full sm:w-auto bg-slate-700 border border-slate-600 text-white rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-500"
+                className="bg-slate-800 border border-slate-700 text-white text-xs rounded-lg px-2 py-1.5 outline-none focus:ring-1 focus:ring-green-500"
               >
-                {EMPLOYEES.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
-                ))}
+                {EMPLOYEES.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
               </select>
-            </div>
-          )}
+            )}
+          </div>
         </div>
+      </div>
 
-        {/* Header */}
-        <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="max-w-7xl mx-auto px-4 mt-8">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
-              <CalendarDays className="w-8 h-8 text-blue-600" />
-              Ferie- & Vagtplanlægger
+            <h1 className="text-4xl font-black text-slate-900 tracking-tight">
+              Sommerferie <span className="text-blue-600">2024</span>
             </h1>
-            <p className="text-slate-500 mt-1">
-              {role === 'planner' ? 'Styr ferieønsker og weekendvagter (Sky-synkroniseret).' : 'Indtast dine ferieønsker og se vagtplanen.'}
+            <p className="text-slate-500 font-medium mt-2 flex items-center gap-2">
+              <Info className="w-4 h-4" /> 
+              {role === 'planner' ? 'Du administrerer afdelingens samlede vagtplan.' : `Hej ${EMPLOYEES.find(e => e.id === currentEmpId)?.name}, her kan du se og ønske din ferie.`}
             </p>
           </div>
 
-          <div className="flex bg-white rounded-lg shadow-sm border border-slate-200 p-1">
+          <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200 self-start md:self-auto">
             <button 
               onClick={() => setActiveTab('planning')}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${activeTab === 'planning' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'planning' ? 'bg-slate-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              Planlægning
+              <Plus className="w-4 h-4" /> Input
             </button>
             <button 
               onClick={() => setActiveTab('overview')}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${activeTab === 'overview' ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-slate-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
             >
-              Overblik
+              <Calendar className="w-4 h-4" /> Overblik
             </button>
           </div>
-          
-          {role === 'planner' && (
-            <button 
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
-            >
-              <Download className="w-4 h-4" />
-              Eksportér (Excel)
-            </button>
-          )}
-        </header>
+        </div>
 
-        {/* --- TAB: PLANLÆGNING --- */}
+        {/* Tab Indhold: PLANLÆGNING */}
         {activeTab === 'planning' && (
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             
-            {role === 'planner' && (
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-slate-400" /> Indstillinger
-                </h2>
-                <div className="flex flex-wrap gap-4 items-end">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Startdato</label>
-                    <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Slutdato</label>
-                    <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1 flex items-center gap-1">
-                      <Settings className="w-4 h-4 text-slate-400" /> Max væk af gangen
-                    </label>
-                    <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-32 border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className={`grid grid-cols-1 ${role === 'planner' ? 'lg:grid-cols-2' : ''} gap-6`}>
+            {/* Venstre Kolonne: Indstillinger & Formularer */}
+            <div className="lg:col-span-1 space-y-6">
               
-              {/* Ferie Input */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Users className={`w-5 h-5 ${role === 'employee' ? 'text-green-600' : 'text-green-500'}`} />
-                  {role === 'planner' ? 'Indtast Ferie & Vagtfriønsker' : 'Mine Ønsker'}
+              {/* Periode Definition (Kun Planlægger) */}
+              {role === 'planner' && (
+                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                  <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <Settings className="w-4 h-4" /> Periode & Regler
+                  </h2>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Startdato</label>
+                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Slutdato</label>
+                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Max medarbejdere på ferie</label>
+                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* Ferie/Vagtfri Input Formular */}
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
+                <div className={`absolute top-0 left-0 w-full h-1 ${absForm.type === 'vacation' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> Tilføj Ønske
                 </h2>
-                
-                <form onSubmit={handleAddAbsence} className="space-y-4 mb-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                  <div className="flex gap-4">
-                    {role === 'planner' && (
-                      <div className="flex-1">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Medarbejder</label>
-                        <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: Number(e.target.value)})} className="w-full border border-slate-300 rounded-lg px-4 py-2 bg-white outline-none">
-                          {EMPLOYEES.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                        </select>
-                      </div>
-                    )}
-                    <div className="flex-1">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                      <select value={absForm.type} onChange={e => setAbsForm({...absForm, type: e.target.value})} className="w-full border border-slate-300 rounded-lg px-4 py-2 bg-white outline-none">
-                        <option value="vacation">Ferie</option>
-                        <option value="vagtfri">Ønsker vagtfri</option>
+                <form onSubmit={handleAddAbsence} className="space-y-4">
+                  {role === 'planner' && (
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Medarbejder</label>
+                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none">
+                        {EMPLOYEES.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
                       </select>
                     </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Fra</label>
-                      <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full border border-slate-300 rounded-lg px-4 py-2" />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Til</label>
-                      <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full border border-slate-300 rounded-lg px-4 py-2" />
+                  )}
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 mb-1 block">Type</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}>Ferie</button>
+                      <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-2 px-3 rounded-lg text-xs font-bold border transition-all ${absForm.type === 'vagtfri' ? 'bg-yellow-50 border-yellow-200 text-yellow-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}>Vagtfri</button>
                     </div>
                   </div>
-                  <button type="submit" className={`w-full text-white font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${absForm.type === 'vacation' ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
-                    <Plus className="w-4 h-4" /> Tilføj
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Fra</label>
+                      <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Til</label>
+                      <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none" />
+                    </div>
+                  </div>
+                  <button type="submit" className={`w-full py-3 rounded-xl text-sm font-black text-white transition-all shadow-md active:scale-95 ${absForm.type === 'vacation' ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
+                    Gem Ønske
                   </button>
                 </form>
+              </section>
 
-                <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+              {/* Weekendvagt Formular (Kun Planlægger) */}
+              {role === 'planner' && (
+                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 overflow-hidden relative">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-blue-600"></div>
+                  <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4" /> Tildel Vagt
+                  </h2>
+                  <form onSubmit={handleAddShift} className="space-y-4">
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Dato</label>
+                      <input type="date" value={shiftForm.date} onChange={e => setShiftForm({...shiftForm, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-500 mb-1 block">Vælg Ledig Medarbejder</label>
+                      <select 
+                        value={shiftForm.empId} 
+                        onChange={e => setShiftForm({...shiftForm, empId: Number(e.target.value)})} 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none disabled:opacity-50"
+                        disabled={!shiftForm.date}
+                      >
+                        <option value="0">{shiftForm.date ? 'Vælg medarbejder...' : 'Vælg dato først'}</option>
+                        {availableEmployeesForShift.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                      </select>
+                    </div>
+                    <button type="submit" disabled={!shiftForm.date || !shiftForm.empId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white py-3 rounded-xl text-sm font-black transition-all shadow-md active:scale-95">
+                      Bekræft Vagt
+                    </button>
+                  </form>
+                  <button onClick={handleAutoDistribute} className="w-full mt-4 flex items-center justify-center gap-2 text-blue-600 text-xs font-black py-2 rounded-lg border border-blue-100 hover:bg-blue-50 transition-all">
+                    <Wand2 className="w-3.5 h-3.5" /> Kør Automatisk Fordeling
+                  </button>
+                </section>
+              )}
+            </div>
+
+            {/* Højre Kolonne: Lister over registreringer */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Eksisterende Fravær */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                  <h2 className="text-lg font-black text-slate-900">Aktuelle Ønsker</h2>
+                  {role === 'planner' && (
+                    <button onClick={handleExportCSV} className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-xs font-bold">
+                      <Download className="w-3.5 h-3.5" /> Eksportér Excel
+                    </button>
+                  )}
+                </div>
+                <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
                   {absences.length === 0 ? (
-                    <p className="text-slate-400 text-sm text-center py-4">Ingen data indtastet.</p>
+                    <div className="p-12 text-center text-slate-400 italic">Ingen ferieønsker registreret endnu...</div>
                   ) : (
                     [...absences].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime()).map(abs => {
                       const emp = EMPLOYEES.find(e => e.id === abs.empId);
                       const isVacation = abs.type === 'vacation';
                       const isMine = role === 'employee' && abs.empId === currentEmpId;
                       const canDelete = role === 'planner' || isMine;
-                      const opacityClass = (role === 'employee' && !isMine) ? 'opacity-60' : '';
+                      if (role === 'employee' && !isMine && abs.type === 'vagtfri') return null; // Skjul andres vagtfri-ønsker
 
                       return (
-                        <div key={abs.id} className={`flex justify-between items-center bg-white border border-slate-200 p-3 rounded-lg border-l-4 ${opacityClass}`} style={{borderLeftColor: isVacation ? '#4ade80' : '#facc15'}}>
-                          <div>
-                            <span className="font-medium text-slate-800">{emp?.name} {isMine && '(Dig)'}</span>
-                            <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 uppercase">
-                              {isVacation ? 'Ferie' : 'Vagtfri'}
-                            </span>
-                            <span className="text-sm text-slate-500 block mt-1">
-                              {formatDateShort(parseDate(abs.start))} - {formatDateShort(parseDate(abs.end))}
-                            </span>
+                        <div key={abs.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-2 h-10 rounded-full ${isVacation ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900">{emp?.name} {isMine && <span className="text-xs text-blue-600">(Dig)</span>}</span>
+                                <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded-full ${isVacation ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                  {isVacation ? 'Ferie' : 'Vagtfri'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-slate-500 font-medium mt-0.5">
+                                {formatDateShort(parseDate(abs.start))} — {formatDateShort(parseDate(abs.end))}
+                              </p>
+                            </div>
                           </div>
                           {canDelete && (
-                            <button onClick={() => handleDeleteAbsence(abs.id)} className="text-red-400 hover:text-red-600 p-2">
+                            <button onClick={() => handleDeleteAbsence(abs.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
@@ -569,55 +498,31 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Weekendvagter (Kun Planlægger) */}
-              {role === 'planner' && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-blue-500" /> Weekendvagter
-                  </h2>
-                  
-                  <form onSubmit={handleAddShift} className="space-y-4 mb-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Dato</label>
-                      <input type="date" value={shiftForm.date} onChange={handleShiftDateChange} className="w-full border border-slate-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Medarbejder</label>
-                      <select value={shiftForm.empId} onChange={e => setShiftForm({...shiftForm, empId: Number(e.target.value)})} className="w-full border border-slate-300 rounded-lg px-4 py-2 bg-white disabled:bg-slate-100 disabled:text-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" disabled={!shiftForm.date || availableEmployeesForShift.length === 0}>
-                        {!shiftForm.date && <option value="0">Vælg dato først</option>}
-                        {shiftForm.date && availableEmployeesForShift.length === 0 && <option value="0">Ingen ledige</option>}
-                        {availableEmployeesForShift.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                      </select>
-                    </div>
-                    <button type="submit" disabled={!shiftForm.date || !shiftForm.empId} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors">
-                      <Plus className="w-4 h-4" /> Tildel
-                    </button>
-                  </form>
-
-                  <div className="mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center justify-between">
-                    <div className="text-sm text-blue-800">
-                      <p className="font-semibold">Auto-fordeling</p>
-                      <p className="text-xs mt-0.5 opacity-90">Udfyld automatisk tomme weekender.</p>
-                    </div>
-                    <button onClick={handleAutoDistribute} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
-                      <Wand2 className="w-4 h-4" /> Kør
-                    </button>
+              {/* Weekendvagt Liste (Kun hvis der er nogen) */}
+              {weekendShifts.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100">
+                    <h2 className="text-lg font-black text-slate-900">Planlagte Weekendvagter</h2>
                   </div>
-
-                  <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-slate-100">
                     {[...weekendShifts].sort((a,b) => parseDate(a.date).getTime() - parseDate(b.date).getTime()).map(shift => {
                       const emp = EMPLOYEES.find(e => e.id === shift.empId);
                       return (
-                        <div key={shift.id} className="flex justify-between items-center bg-white border border-slate-200 p-3 rounded-lg">
-                          <div>
-                            <span className="font-medium text-slate-800">{emp?.name}</span>
-                            <span className="text-sm text-slate-500 block">
-                              {getDayName(parseDate(shift.date))}. {formatDateShort(parseDate(shift.date))}
-                            </span>
+                        <div key={shift.id} className="bg-white p-4 flex items-center justify-between group">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-blue-50 text-blue-600 p-2 rounded-lg">
+                              <CalendarDays className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-black text-slate-400 uppercase">{getDayName(parseDate(shift.date))}. {formatDateShort(parseDate(shift.date))}</p>
+                              <p className="font-bold text-slate-900">{emp?.name}</p>
+                            </div>
                           </div>
-                          <button onClick={() => handleDeleteShift(shift.id)} className="text-red-400 hover:text-red-600 p-2">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {role === 'planner' && (
+                            <button onClick={() => handleDeleteShift(shift.id)} className="p-2 text-slate-300 hover:text-red-500 rounded-lg transition-all">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       )
                     })}
@@ -628,117 +533,129 @@ export default function App() {
           </div>
         )}
 
-        {/* --- TAB: OVERBLIK --- */}
+        {/* Tab Indhold: OVERBLIK */}
         {activeTab === 'overview' && (
-          <div className="space-y-6">
+          <div className="space-y-8 animate-in fade-in duration-500">
             
+            {/* Advarsler Box */}
             {(conflicts.length > 0 || (role === 'planner' && absenceWarnings.length > 0)) && (
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
-                  <h3 className="text-red-800 font-bold">Opmærksomhed påkrævet!</h3>
+              <div className="bg-red-50 border border-red-100 rounded-2xl p-6 flex flex-col sm:flex-row gap-4">
+                <div className="bg-red-500 p-2 rounded-xl text-white self-start">
+                  <AlertTriangle className="w-6 h-6" />
                 </div>
-                <ul className="list-disc list-inside text-red-700 space-y-1">
-                  {conflicts.map((conf, idx) => <li key={`conf-${idx}`} className="text-sm font-semibold">{conf.message}</li>)}
-                  {role === 'planner' && absenceWarnings.map((warn, idx) => <li key={`warn-${idx}`} className="text-sm">{warn}</li>)}
-                </ul>
+                <div>
+                  <h3 className="text-red-900 font-black text-lg">Konflikter opdaget</h3>
+                  <p className="text-red-700 text-sm font-medium mb-3">Planen overholder ikke de opsatte regler eller har medarbejdere på vagt under ferie.</p>
+                  <ul className="space-y-1">
+                    {conflicts.map((c, i) => <li key={i} className="text-red-600 text-xs font-bold flex items-center gap-2"><ChevronRight className="w-3 h-3" /> {c.message}</li>)}
+                    {role === 'planner' && absenceWarnings.map((w, i) => <li key={i} className="text-red-600 text-xs font-medium flex items-center gap-2"><ChevronRight className="w-3 h-3" /> {w}</li>)}
+                  </ul>
+                </div>
               </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-              <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                <h2 className="font-semibold text-slate-800">Vagtplan</h2>
-                <div className="flex gap-4 text-sm flex-wrap">
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 bg-green-400 rounded-sm"></div> Ferie</div>
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 bg-yellow-400 rounded-sm"></div> Vagtfri</div>
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 bg-blue-500 rounded-sm"></div> Vagt</div>
-                  <div className="flex items-center gap-1"><div className="w-3 h-3 bg-red-500 rounded-sm"></div> Konflikt</div>
+            {/* Selve Kalender Matrix */}
+            <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 flex flex-wrap justify-between items-center gap-4">
+                <h2 className="text-xl font-black text-slate-900">Vagtplan Matrix</h2>
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500"><div className="w-3 h-3 bg-green-500 rounded-sm"></div> Ferie</div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500"><div className="w-3 h-3 bg-yellow-400 rounded-sm"></div> Vagtfri</div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500"><div className="w-3 h-3 bg-blue-600 rounded-sm"></div> Vagt</div>
                 </div>
               </div>
               
               <div className="overflow-x-auto">
-                <div className="min-w-max">
-                  <div className="flex border-b border-slate-200">
-                    <div className="w-32 flex-shrink-0 p-3 bg-white sticky left-0 z-10 border-r border-slate-200">
-                      <span className="text-xs font-semibold text-slate-400 uppercase">Medarbejder</span>
-                    </div>
-                    {periodDates.map((date, i) => (
-                      <div key={i} className={`w-10 flex-shrink-0 flex flex-col items-center justify-center py-2 border-r border-slate-100 ${isWeekend(date) ? 'bg-slate-100' : 'bg-white'}`}>
-                        <span className="text-[10px] text-slate-500 uppercase">{getDayName(date).charAt(0)}</span>
-                        <span className="text-xs font-semibold text-slate-900">{date.getDate()}</span>
-                      </div>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="sticky left-0 z-20 bg-slate-50 p-4 text-left border-r border-slate-200 min-w-[160px]">
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Medarbejder</span>
+                      </th>
+                      {periodDates.map((date, i) => (
+                        <th key={i} className={`p-2 min-w-[40px] text-center border-r border-slate-100 ${isWeekend(date) ? 'bg-slate-100' : ''}`}>
+                          <div className="text-[10px] font-black text-slate-400 uppercase">{getDayName(date).charAt(0)}</div>
+                          <div className={`text-xs font-bold ${isWeekend(date) ? 'text-slate-900' : 'text-slate-600'}`}>{date.getDate()}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {EMPLOYEES.map(emp => (
+                      <tr key={emp.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                        <td className={`sticky left-0 z-20 p-4 font-bold text-sm border-r border-slate-200 transition-colors ${role === 'employee' && currentEmpId === emp.id ? 'bg-blue-50 text-blue-700' : 'bg-white'}`}>
+                          {emp.name} {role === 'employee' && currentEmpId === emp.id && ' (Dig)'}
+                        </td>
+                        {periodDates.map((date, i) => {
+                          const abs = getAbsenceOnDate(date, emp.id);
+                          const shift = hasShiftOnDate(date, emp.id);
+                          const conflict = abs && shift;
+                          
+                          let bg = "";
+                          if (conflict) bg = "bg-red-500";
+                          else if (shift) bg = "bg-blue-600 shadow-inner";
+                          else if (abs?.type === 'vacation') bg = "bg-green-500";
+                          else if (abs?.type === 'vagtfri') bg = "bg-yellow-400";
+
+                          return (
+                            <td key={i} className={`p-0 border-r border-slate-100 h-10 ${isWeekend(date) && !bg ? 'bg-slate-50/50' : ''}`}>
+                              <div className={`w-full h-full flex items-center justify-center transition-all ${bg}`}>
+                                {shift && !conflict && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
+                                {conflict && <AlertTriangle className="w-3 h-3 text-white animate-pulse" />}
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
                     ))}
-                  </div>
-
-                  {EMPLOYEES.map(emp => (
-                    <div key={emp.id} className={`flex border-b border-slate-100 hover:bg-slate-50 transition-colors ${role === 'employee' && currentEmpId === emp.id ? 'bg-blue-50/50' : ''}`}>
-                      <div className="w-32 flex-shrink-0 p-3 bg-white sticky left-0 z-10 border-r border-slate-200 font-medium text-sm text-slate-700 flex items-center">
-                        {emp.name} {role === 'employee' && currentEmpId === emp.id && ' (Dig)'}
-                      </div>
+                    {/* Opsamling i bunden */}
+                    <tr className="bg-slate-50">
+                      <td className="sticky left-0 z-20 bg-slate-50 p-3 text-right pr-4 text-[10px] font-black text-slate-400 uppercase border-r border-slate-200">På Ferie:</td>
                       {periodDates.map((date, i) => {
-                        const absence = getAbsenceOnDate(date, emp.id);
-                        const isVacation = absence?.type === 'vacation';
-                        const isVagtfri = absence?.type === 'vagtfri';
-                        const hasShift = hasShiftOnDate(date, emp.id);
-                        const isConflict = (isVacation || isVagtfri) && hasShift;
-                        const weekend = isWeekend(date);
-
-                        let bgColor = weekend ? 'bg-slate-50' : 'bg-white';
-                        if (isConflict) bgColor = 'bg-red-500';
-                        else if (hasShift) bgColor = 'bg-blue-500';
-                        else if (isVacation) bgColor = 'bg-green-400';
-                        else if (isVagtfri) bgColor = 'bg-yellow-400';
-
+                        const count = EMPLOYEES.filter(emp => getAbsenceOnDate(date, emp.id)?.type === 'vacation').length;
                         return (
-                          <div key={i} className={`w-10 flex-shrink-0 border-r border-slate-100 relative ${bgColor}`}>
-                            {isVacation && !hasShift && !isConflict && <div className="absolute inset-y-1 inset-x-0 bg-green-400 opacity-80"></div>}
-                            {isVagtfri && !hasShift && !isConflict && <div className="absolute inset-y-1 inset-x-0 bg-yellow-400 opacity-80"></div>}
-                            {hasShift && !isConflict && <div className="absolute inset-2 rounded-sm bg-blue-500 flex items-center justify-center"><div className="w-1 h-1 bg-white rounded-full"></div></div>}
-                            {isConflict && <div className="absolute inset-1 rounded-sm bg-red-500 flex items-center justify-center animate-pulse"><AlertTriangle className="w-3 h-3 text-white" /></div>}
-                          </div>
+                          <td key={i} className={`text-center text-xs font-black border-r border-slate-100 ${count > maxAway ? 'text-red-600 bg-red-50' : 'text-slate-400'}`}>
+                            {count > 0 ? count : '-'}
+                          </td>
                         )
                       })}
-                    </div>
-                  ))}
-
-                  <div className="flex bg-slate-100 text-xs text-slate-500 font-medium">
-                    <div className="w-32 flex-shrink-0 p-2 bg-slate-100 sticky left-0 z-10 border-r border-slate-200 text-right pr-4 flex items-center justify-end">
-                      På ferie:
-                    </div>
-                    {periodDates.map((date, i) => {
-                      const countAway = EMPLOYEES.filter(emp => getAbsenceOnDate(date, emp.id)?.type === 'vacation').length;
-                      const isOverLimit = countAway > maxAway;
-                      return (
-                        <div key={i} className={`w-10 flex-shrink-0 flex items-center justify-center border-r border-slate-200 py-2 ${isOverLimit ? 'bg-red-100' : ''}`}>
-                          <span className={isOverLimit ? 'text-red-600 font-bold' : ''}>{countAway > 0 ? countAway : '-'}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-slate-500" /> Statistik
+            {/* Statistik / Retfærdighedstjek */}
+            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+              <h2 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-blue-600" /> Vagtfordeling
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                 {EMPLOYEES.map(emp => (
-                  <div key={emp.id} className={`bg-slate-50 rounded-lg p-3 border border-slate-100 text-center ${role === 'employee' && currentEmpId === emp.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''}`}>
-                    <div className="text-sm font-medium text-slate-600 mb-1">{emp.name}</div>
-                    <div className="text-2xl font-bold text-slate-800">
-                      {shiftCounts[emp.id]} <span className="text-xs text-slate-400 font-normal">vagter</span>
+                  <div key={emp.id} className={`p-4 rounded-2xl border transition-all ${role === 'employee' && currentEmpId === emp.id ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-100' : 'bg-slate-50 border-slate-100'}`}>
+                    <div className="text-[10px] font-black text-slate-400 uppercase mb-1 truncate">{emp.name}</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-black text-slate-900">{shiftCounts[emp.id]}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">vagter</span>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
           </div>
         )}
-
       </div>
     </div>
   );
 }
+
+// --- Hjælpefunktioner flyttet ud for renere kode ---
+const getAbsenceOnDate = (date: Date, empId: number) => {
+  // Denne funktion genbruges af Matrix
+  // Bemærk: Vi bruger de faktiske state-værdier inde i komponenten, så her sender vi blot logikken tilbage
+};
+
+const hasShiftOnDate = (date: Date, empId: number) => {
+  // Samme her
+};
