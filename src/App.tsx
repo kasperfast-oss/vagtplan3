@@ -91,7 +91,7 @@ export default function App() {
   const [absForm, setAbsForm] = useState({ empId: '', type: 'vacation', start: '', end: '' });
   const [newEmployeeName, setNewEmployeeName] = useState('');
 
-  // Injection of Tailwind CDN as a safety measure
+  // Sørg for at Tailwind er indlæst hvis StackBlitz mangler det
   useEffect(() => {
     const script = document.createElement('script');
     script.src = "https://cdn.tailwindcss.com";
@@ -208,14 +208,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-left overflow-x-hidden">
-      {/* GLOBAL CSS OVERRIDE */}
+      {/* GLOBAL CSS OVERRIDE FOR AT FJERNE STACKBLITZ CENTRERING */}
       <style>{`
-        #root, body, html { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; display: block !important; }
-        body { background-color: #F8FAFC; }
+        #root { width: 100% !important; max-width: 100% !important; margin: 0 !important; padding: 0 !important; display: block !important; }
+        body { margin: 0; padding: 0; place-items: start !important; background-color: #F8FAFC; }
         * { box-sizing: border-box; }
       `}</style>
       
-      {/* Top Navigation */}
+      {/* Navigation */}
       <nav className="bg-white border-b border-slate-200 h-16 sticky top-0 z-50 px-4 md:px-8 flex items-center justify-between shadow-sm w-full">
         <div className="flex items-center gap-4 md:gap-8">
           <div className="flex items-center gap-2.5">
@@ -250,7 +250,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-full border transition-all group ${!currentEmpId && role === 'employee' ? 'bg-red-50 border-red-200 ring-2 ring-red-100' : 'bg-slate-50 border-slate-200'}`}>
+          <div className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-full border transition-all group ${!currentEmpId && role === 'employee' ? 'bg-red-50 border-red-200 ring-2 ring-red-100 animate-pulse' : 'bg-slate-50 border-slate-200'}`}>
             <UserCircle className={`w-4 h-4 ${!currentEmpId && role === 'employee' ? 'text-red-400' : 'text-slate-400 group-hover:text-blue-500'}`} />
             <select 
               value={currentEmpId} 
@@ -272,12 +272,13 @@ export default function App() {
           >
             {role === 'planner' ? <Lock className="w-5 h-5" /> : <UserCircle className="w-5 h-5" />}
             <span className="text-[10px] font-black uppercase tracking-widest hidden lg:inline">
-              {role === 'planner' ? 'Admin Mode' : 'Admin'}
+              {role === 'planner' ? 'Admin Mode' : 'Admin Login'}
             </span>
           </button>
         </div>
       </nav>
 
+      {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8">
         
         {/* --- REGISTRATION VIEW --- */}
@@ -293,13 +294,13 @@ export default function App() {
                 <div className={`absolute top-0 left-0 w-full h-1.5 ${!currentEmpId && role === 'employee' ? 'bg-red-400' : (absForm.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500')}`}></div>
                 
                 <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ferieønske
+                  <Plus className="w-5 h-5 text-blue-600" /> Nyt ønske
                 </h2>
 
                 {!currentEmpId && role === 'employee' ? (
                   <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6">
                     <p className="text-red-700 text-xs font-bold leading-tight flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 shrink-0" /> Vælg dit navn i toppen først!
+                      <AlertTriangle className="w-5 h-5 shrink-0" /> Du skal vælge dit navn i toppen først!
                     </p>
                   </div>
                 ) : role === 'employee' && (
@@ -323,7 +324,7 @@ export default function App() {
                     </div>
                   )}
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Type</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Ønsketype</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400'}`}>Ferie</button>
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>Vagtfri</button>
@@ -339,23 +340,27 @@ export default function App() {
                       <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     </div>
                   </div>
-                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-lg shadow-blue-100">Gem ønske</button>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black shadow-xl shadow-blue-100">Gem registrering</button>
                 </form>
               </section>
 
               {role === 'planner' && (
                 <section className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white space-y-8">
                   <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Settings className="w-4 h-4" /> Periode-opsætning
+                    <Settings className="w-4 h-4" /> System-indstillinger
                   </h2>
                   <div className="space-y-6">
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Start dato</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægning Start</label>
                       <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Slut dato</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægning Slut</label>
                       <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Max fravær pr. dag</label>
+                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                   </div>
                 </section>
@@ -368,14 +373,12 @@ export default function App() {
                   <h2 className="font-black text-2xl text-slate-900">Aktuelle registreringer</h2>
                   <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-2 rounded-full">
                     <Info className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Synkroniseret</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Cloud Synkroniseret</span>
                   </div>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {absences.length === 0 ? (
-                    <div className="p-24 text-center">
-                      <p className="text-slate-400 font-bold italic text-lg">Ingen registreringer endnu...</p>
-                    </div>
+                    <div className="p-24 text-center text-slate-400 font-bold italic text-lg">Ingen registreringer fundet...</div>
                   ) : (
                     [...absences].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime()).map(a => {
                       const emp = employees.find(e => e.id === a.empId);
@@ -386,7 +389,7 @@ export default function App() {
                             <div className={`w-1.5 h-12 rounded-full ${a.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500'}`}></div>
                             <div>
                               <div className="flex flex-wrap items-center gap-3">
-                                <span className="font-black text-lg text-slate-900">{emp?.name || 'Ukendt'} {isMine && <span className="text-[10px] text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">(Dig)</span>}</span>
+                                <span className="font-black text-lg text-slate-900">{emp?.name || 'Slettet person'} {isMine && <span className="text-[10px] text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">(Dig)</span>}</span>
                                 <span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-lg ${a.type === 'vacation' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{a.type === 'vacation' ? 'Ferie' : 'Vagtfri'}</span>
                               </div>
                               <p className="text-sm font-bold text-slate-500 mt-1 flex items-center gap-1.5">
@@ -494,7 +497,7 @@ export default function App() {
                     )}
                     {role === 'planner' && employees.length > 0 && (
                       <tr className="bg-slate-100/50 border-t-2 border-slate-200">
-                        <td className="sticky left-0 z-20 bg-slate-200 p-4 text-right font-black text-[10px] text-slate-500 uppercase border-r border-slate-200">Ferie total</td>
+                        <td className="sticky left-0 z-20 bg-slate-200 p-4 text-right font-black text-[10px] text-slate-500 uppercase border-r border-slate-200">Ferie i alt</td>
                         {periodDates.map((date, i) => {
                           const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
                           const isOver = count > maxAway;
@@ -518,17 +521,17 @@ export default function App() {
                     <div className="bg-purple-50 text-purple-600 w-fit p-4 rounded-2xl mb-6">
                       <ShieldAlert className="w-8 h-8" />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-900 mb-3">Vagtfordeling</h2>
+                    <h2 className="text-2xl font-black text-slate-900 mb-3">Vagt-fordeling</h2>
                     <p className="text-slate-500 text-sm leading-relaxed mb-8 font-medium">Automatisk fordeling tildeler weekendvagter til dem, der ikke har ferie og som har færrest vagter i perioden.</p>
                   </div>
                   <button onClick={handleAutoDistribute} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-2xl text-sm font-black flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-slate-200">
-                    <Wand2 className="w-5 h-5" /> Kør automatisk fordeling
+                    <Wand2 className="w-5 h-5" /> Kør auto-fordeling
                   </button>
                 </div>
                 
                 <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Vagtfordeling pr. person
+                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Vagt-statistik
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
                     {employees.map(emp => {
@@ -555,7 +558,7 @@ export default function App() {
           <div className="max-w-3xl mx-auto animate-in fade-in duration-500">
             <header className="mb-12 text-center">
               <h1 className="text-4xl font-black text-slate-900 tracking-tight">Personalestyring</h1>
-              <p className="text-slate-500 text-lg">Administrer listen over ansatte.</p>
+              <p className="text-slate-500 text-lg">Administrer dine medarbejdere.</p>
             </header>
 
             <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8 mb-10">
@@ -603,7 +606,7 @@ export default function App() {
   );
 }
 
-// Interfaces needed for Staff tracking
+// Interfaces 
 interface Employee { id: string; name: string; }
 interface Absence { id: string; empId: string; type: string; start: string; end: string; }
 interface Shift { id: string; empId: string; date: string; }
