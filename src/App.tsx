@@ -102,7 +102,7 @@ export default function App() {
   const [shiftForm, setShiftForm] = useState({ empId: '', date: '', type: '7-vagt' });
   const [newEmployeeName, setNewEmployeeName] = useState('');
 
-  // Sørg for at Tailwind er indlæst
+  // Injektion af Tailwind CDN
   useEffect(() => {
     const script = document.createElement('script');
     script.src = "https://cdn.tailwindcss.com";
@@ -194,7 +194,7 @@ export default function App() {
     return [...list].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime());
   }, [absences, role, currentEmpId]);
 
-  // --- Handlinger ---
+  // --- Handlinger (Downloads & Administrative) ---
   const handleExportFullCSV = () => {
     let csv = "\uFEFFNavn;Type;Dato;Detaljer\n";
     employees.sort((a,b) => a.name.localeCompare(b.name)).forEach(emp => {
@@ -208,7 +208,7 @@ export default function App() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `fuld_vagtplan.csv`;
+    link.download = `fuld_vagtplan_export.csv`;
     link.click();
   };
 
@@ -229,7 +229,7 @@ export default function App() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `min_vagtplan_${emp.name}.csv`;
+    link.download = `min_vagtplan_${emp.name.replace(/\s+/g, '_')}.csv`;
     link.click();
   };
 
@@ -243,7 +243,7 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    if (window.confirm("Slet medarbejder?")) {
+    if (window.confirm("Vil du slette medarbejderen?")) {
       try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', id)); } catch (e: any) { console.error(e); }
     }
   };
@@ -268,7 +268,7 @@ export default function App() {
 
   const handleAutoDistribute = async () => {
     const unassignedShifts = weekendShifts.filter(s => !s.empId);
-    if (unassignedShifts.length === 0) return alert("Ingen ledige vagter.");
+    if (unassignedShifts.length === 0) return alert("Der er ingen ledige vagter.");
     let counts: Record<string, number> = {};
     employees.forEach(e => counts[e.id] = weekendShifts.filter(s => s.empId === e.id).length);
     for (const shift of unassignedShifts) {
@@ -297,7 +297,7 @@ export default function App() {
     }
   };
 
-  if (!user) return <div className="min-h-screen flex items-center justify-center bg-white text-slate-400 font-sans uppercase tracking-widest text-xs">Forbinder...</div>;
+  if (!user) return <div className="min-h-screen flex items-center justify-center bg-white text-slate-400 font-sans uppercase tracking-widest text-xs">Forbinder til sky-database...</div>;
 
   return (
     <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col font-sans text-left overflow-x-hidden">
@@ -311,6 +311,16 @@ export default function App() {
           display: inline-block;
           padding: 0 1rem;
           white-space: nowrap;
+          z-index: 10;
+        }
+        .conflict-glow {
+          box-shadow: 0 0 15px rgba(239, 68, 68, 0.6);
+          animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
       `}</style>
       
@@ -318,7 +328,7 @@ export default function App() {
       <nav className="bg-white border-b border-slate-200 h-16 sticky top-0 z-50 px-4 md:px-8 flex items-center justify-between shadow-sm w-full">
         <div className="flex items-center gap-4 md:gap-8">
           <div className="flex items-center gap-2.5">
-            <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
+            <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg">
               <CalendarDays className="w-5 h-5" />
             </div>
             <span className="font-black text-xl text-slate-900 tracking-tight hidden sm:inline uppercase">VagtPlan</span>
@@ -355,10 +365,12 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-8 text-left">
+        
+        {/* --- REGISTRATION VIEW --- */}
         {activeTab === 'input' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500 text-left">
             <div className="lg:col-span-12 mb-2 flex justify-between items-end">
-              <div>
+              <div className="text-left text-left">
                 <h1 className="text-4xl font-black text-slate-900 tracking-tight">Fraværsregistrering</h1>
                 <p className="text-slate-500 font-medium text-lg mt-1">Indsend dine ønsker til ferie og fridage herunder.</p>
               </div>
@@ -370,40 +382,41 @@ export default function App() {
             </div>
 
             <div className="lg:col-span-4 space-y-6">
+              {/* Formular sektion */}
               <section className={`bg-white rounded-3xl shadow-sm border p-6 md:p-8 overflow-hidden relative transition-all ${!currentEmpId && role === 'employee' ? 'border-red-100' : 'border-slate-200'}`}>
                 <div className={`absolute top-0 left-0 w-full h-1.5 ${!currentEmpId && role === 'employee' ? 'bg-red-400' : (absForm.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500')}`}></div>
-                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2 text-left"><Plus className="w-5 h-5 text-blue-600" /> Nyt ønske</h2>
+                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2 text-left text-left text-left"><Plus className="w-5 h-5 text-blue-600" /> Nyt ønske</h2>
                 
                 {currentEmpId && role === 'employee' ? (
                   <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 mb-6 flex items-center gap-3">
                     <UserCheck className="w-5 h-5 text-blue-600" />
-                    <div className="text-left">
+                    <div className="text-left text-left">
                       <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">Aktiv profil</p>
                       <p className="text-blue-900 text-sm font-bold leading-none">{employees.find(e => e.id === currentEmpId)?.name}</p>
                     </div>
                   </div>
                 ) : role === 'employee' && (
-                  <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6 flex items-center gap-2 text-red-700 text-xs font-bold leading-tight"><AlertTriangle className="w-5 h-5 shrink-0" /> Vælg dit navn i toppen først!</div>
+                  <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6 flex items-center gap-2 text-red-700 text-xs font-bold leading-tight text-left text-left"><AlertTriangle className="w-5 h-5 shrink-0" /> Vælg dit navn i toppen først!</div>
                 )}
 
                 <form onSubmit={handleAddAbsence} className={`space-y-6 ${!currentEmpId && role === 'employee' ? 'opacity-30 pointer-events-none' : ''}`}>
                   {role === 'planner' && (
-                    <div className="text-left">
+                    <div className="text-left text-left">
                       <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest ml-1">Medarbejder</label>
-                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none">
                         <option value="">Vælg...</option>
                         {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
                   )}
-                  <div className="text-left">
+                  <div className="text-left text-left text-left">
                     <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest ml-1">Ønsketype</label>
                     <div className="grid grid-cols-2 gap-3">
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400'}`}>Ferie</button>
                       <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>Vagtfri</button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left text-left text-left">
                     <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                     <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
@@ -412,9 +425,9 @@ export default function App() {
               </section>
 
               {role === 'planner' && (
-                <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 overflow-hidden relative text-left">
+                <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 overflow-hidden relative text-left text-left text-left">
                   <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-600"></div>
-                  <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2"><ShieldAlert className="w-5 h-5 text-blue-600" /> Indskriv Vagtbehov</h2>
+                  <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2 text-left text-left"><ShieldAlert className="w-5 h-5 text-blue-600" /> Indskriv Vagtbehov</h2>
                   <form onSubmit={handleAddShift} className="space-y-6">
                     <input type="date" value={shiftForm.date} onChange={e => setShiftForm({...shiftForm, date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" />
                     <select value={shiftForm.type} onChange={e => setShiftForm({...shiftForm, type: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
@@ -431,24 +444,24 @@ export default function App() {
             </div>
 
             <div className="lg:col-span-8 space-y-6">
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden w-full text-left">
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden w-full text-left text-left text-left">
                 <div className="p-6 md:p-8 border-b border-slate-100 flex justify-between items-center bg-white">
                   <h2 className="font-black text-2xl text-slate-900 uppercase tracking-tight">{role === 'planner' ? 'Alle registreringer' : 'Mine registreringer'}</h2>
-                  <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-2 rounded-full leading-none"><Info className="w-4 h-4" /><span className="text-[10px] font-black uppercase tracking-widest leading-none">Opdateret</span></div>
+                  <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-2 rounded-full leading-none"><Info className="w-4 h-4" /><span className="text-[10px] font-black uppercase tracking-widest">Opdateret</span></div>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  {displayAbsences.length === 0 ? <div className="p-24 text-center text-slate-400 font-bold italic text-lg">Ingen registreringer fundet...</div> : displayAbsences.map(a => {
+                  {displayAbsences.length === 0 ? <div className="p-24 text-center text-slate-400 font-bold italic text-lg text-left text-left text-left text-left">Ingen registreringer fundet...</div> : displayAbsences.map(a => {
                     const emp = employees.find(e => e.id === a.empId);
                     return (
                       <div key={a.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                         <div className="flex items-center gap-4 md:gap-6">
                           <div className={`w-1.5 h-12 rounded-full ${a.type === 'vacation' ? 'bg-green-500' : 'bg-amber-500'}`}></div>
-                          <div>
+                          <div className="text-left text-left text-left">
                             <div className="flex items-center gap-3"><span className="font-black text-lg text-slate-900">{emp?.name || 'Ukendt'}</span><span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-lg ${a.type === 'vacation' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{a.type === 'vacation' ? 'Ferie' : 'Vagtfri'}</span></div>
                             <p className="text-sm font-bold text-slate-500 mt-1 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> {formatDateShort(parseDate(a.start))} — {formatDateShort(parseDate(a.end))}</p>
                           </div>
                         </div>
-                        <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-5 h-5" /></button>
+                        <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 text-left text-left"><Trash2 className="w-5 h-5" /></button>
                       </div>
                     )
                   })}
@@ -456,19 +469,19 @@ export default function App() {
               </div>
 
               {role === 'planner' && (
-                <section className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white space-y-8 text-left">
-                  <div className="flex justify-between items-center">
-                    <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Settings className="w-4 h-4" /> System-indstillinger</h2>
+                <section className="bg-slate-900 rounded-3xl p-6 md:p-8 text-white space-y-8 text-left text-left text-left text-left text-left">
+                  <div className="flex justify-between items-center text-left text-left text-left">
+                    <h2 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2 text-left"><Settings className="w-4 h-4" /> System-indstillinger</h2>
                     <button onClick={handleExportFullCSV} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-xl shadow-blue-900/40"><Download className="w-4 h-4" /> Download Fuld Vagtplan</button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div><label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest ml-1">Start dato</label><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
-                    <div><label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest ml-1">Slut dato</label><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
-                    <div><label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest ml-1">Max fravær</label><input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(parseInt(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all" /></div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left text-left text-left text-left text-left">
+                    <div><label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest ml-1 text-left text-left text-left">Start dato</label><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left text-left" /></div>
+                    <div><label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest ml-1 text-left text-left text-left">Slut dato</label><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left text-left" /></div>
+                    <div><label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest ml-1 text-left text-left text-left">Max fravær</label><input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(parseInt(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500 transition-all text-left text-left" /></div>
                   </div>
-                  <div className="pt-6 border-t border-slate-800 grid grid-cols-2 gap-4">
-                    <button onClick={handleClearAllAbsences} className="w-full bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> Ryd fravær</button>
-                    <button onClick={handleClearAllShifts} className="w-full bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2"><Trash2 className="w-4 h-4" /> Ryd vagtbehov</button>
+                  <div className="pt-6 border-t border-slate-800 grid grid-cols-2 gap-4 text-left text-left text-left text-left">
+                    <button onClick={handleClearAllAbsences} className="w-full bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 text-left text-left"><Trash2 className="w-4 h-4" /> Ryd fravær</button>
+                    <button onClick={handleClearAllShifts} className="w-full bg-red-950/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2 text-left text-left"><Trash2 className="w-4 h-4" /> Ryd vagtbehov</button>
                   </div>
                 </section>
               )}
@@ -476,44 +489,51 @@ export default function App() {
           </div>
         )}
 
-        {/* --- KALENDER --- */}
+        {/* --- CALENDAR VIEW --- */}
         {activeTab === 'calendar' && (
-          <div className="space-y-8 animate-in fade-in duration-500 text-left">
+          <div className="space-y-8 animate-in fade-in duration-500 text-left text-left text-left text-left text-left">
             {conflicts.length > 0 && role === 'planner' && (
-              <div className="bg-red-50 border border-red-100 rounded-[2rem] p-6 md:p-8 flex gap-6 text-left">
-                <div className="bg-red-500 p-3 rounded-2xl text-white self-start"><AlertTriangle className="w-6 h-6" /></div>
-                <div>
-                  <h3 className="text-red-900 font-black text-lg">Konflikter opdaget</h3>
-                  <p className="text-red-700 text-sm font-medium mb-4 italic text-left">Følgende personer er tildelt vagter mens de har ønsket fravær:</p>
-                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-left">
-                    {conflicts.map((c, i) => <li key={i} className="text-red-600 text-[11px] font-black flex items-center gap-2 bg-white/50 p-2 rounded-lg border border-red-100 uppercase text-left"><ChevronRight className="w-3 h-3" /> {c}</li>)}
+              <div className="bg-red-50 border border-red-100 rounded-[2rem] p-6 md:p-8 flex gap-6 text-left text-left text-left text-left text-left">
+                <div className="bg-red-500 p-4 rounded-3xl text-white self-start shadow-lg shadow-red-200 animate-bounce">
+                  <AlertTriangle className="w-8 h-8" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-red-900 font-black text-xl text-left">Konflikter opdaget</h3>
+                    <span className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-black tracking-widest animate-pulse">
+                      {conflicts.length} KONFLIKTER FUNDET
+                    </span>
+                  </div>
+                  <p className="text-red-700 text-sm font-medium mb-4 italic text-left text-left text-left">Medarbejdere tildelt vagt mens de har ønsket fravær:</p>
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 text-left text-left text-left text-left text-left text-left text-left">
+                    {conflicts.map((c, i) => <li key={i} className="text-red-600 text-[11px] font-black flex items-center gap-2 bg-white/70 p-3 rounded-xl border border-red-100 uppercase text-left text-left text-left shadow-sm"><ChevronRight className="w-3 h-3 text-red-400" /> {c}</li>)}
                   </ul>
                 </div>
               </div>
             )}
 
-            <div className="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden w-full text-left">
-              <div className="p-8 border-b border-slate-100 flex flex-wrap justify-between items-center gap-6 bg-white sticky left-0 text-left">
-                <div className="flex items-center gap-3"><div className="bg-blue-50 text-blue-600 p-2.5 rounded-2xl"><CalendarDays className="w-6 h-6" /></div><h2 className="text-2xl font-black text-slate-900 tracking-tight text-left">Planlægnings-matrix</h2></div>
-                <div className="flex flex-wrap gap-5">
-                  <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest"><div className="w-3.5 h-3.5 bg-green-500 rounded-md"></div> Ferie</div>
-                  <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest"><div className="w-3.5 h-3.5 bg-amber-400 rounded-md"></div> Vagtfri</div>
-                  <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest"><div className="w-3.5 h-3.5 bg-blue-600 rounded-md"></div> Vagt</div>
+            <div className="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden w-full text-left text-left text-left text-left text-left text-left text-left">
+              <div className="p-8 border-b border-slate-100 flex flex-wrap justify-between items-center gap-6 bg-white sticky left-0 text-left text-left text-left">
+                <div className="flex items-center gap-3 text-left text-left text-left"><div className="bg-blue-50 text-blue-600 p-2.5 rounded-2xl text-left text-left text-left"><CalendarDays className="w-6 h-6" /></div><h2 className="text-2xl font-black text-slate-900 tracking-tight text-left text-left text-left text-left">Planlægnings-matrix</h2></div>
+                <div className="flex flex-wrap gap-5 text-left text-left">
+                  <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest text-left text-left text-left text-left text-left text-left text-left"><div className="w-3.5 h-3.5 bg-green-500 rounded-md"></div> Ferie</div>
+                  <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest text-left text-left text-left text-left text-left text-left text-left"><div className="w-3.5 h-3.5 bg-amber-400 rounded-md"></div> Vagtfri</div>
+                  <div className="flex items-center gap-2 text-xs font-black text-slate-500 uppercase tracking-widest text-left text-left text-left text-left text-left text-left text-left text-left"><div className="w-3.5 h-3.5 bg-blue-600 rounded-md"></div> Vagt</div>
                 </div>
               </div>
               <div className="overflow-x-auto w-full">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-slate-100/50 border-b border-slate-200">
-                      <th className="sticky left-0 z-20 bg-white p-4 border-r border-slate-100 shadow-sm min-w-[200px]"></th>
+                    <tr className="bg-slate-100/50 border-b border-slate-200 text-left text-left">
+                      <th className="sticky left-0 z-20 bg-white p-4 border-r border-slate-100 shadow-sm min-w-[200px] text-left text-left"></th>
                       {monthGroups.map((g, i) => (
-                        <th key={i} colSpan={g.span} className="p-3 border-r border-slate-100/50 text-left bg-blue-600/5">
-                          <span className="sticky-month-text font-black text-[10px] text-blue-700 uppercase tracking-[0.3em]">{g.name}</span>
+                        <th key={i} colSpan={g.span} className="p-3 border-r border-slate-100/50 text-left bg-blue-600/5 text-left text-left">
+                          <span className="sticky-month-text font-black text-[10px] text-blue-700 uppercase tracking-[0.3em] text-left text-left text-left">{g.name}</span>
                         </th>
                       ))}
                     </tr>
-                    <tr className="bg-slate-50/50 border-b border-slate-100 text-left">
-                      <th className="sticky left-0 z-20 bg-white p-6 text-left border-r border-slate-100 min-w-[200px] shadow-sm font-black text-[10px] text-slate-400 uppercase tracking-[0.2em] text-left">Medarbejder</th>
+                    <tr className="bg-slate-50/50 border-b border-slate-100 text-left text-left">
+                      <th className="sticky left-0 z-20 bg-white p-6 text-left border-r border-slate-100 min-w-[200px] shadow-sm font-black text-[10px] text-slate-400 uppercase tracking-[0.2em] text-left text-left text-left">Medarbejder</th>
                       {periodDates.map((date, i) => (
                         <th key={i} className={`p-3 min-w-[50px] text-center border-r border-slate-100/50 ${isWeekend(date) ? 'bg-slate-50/80' : ''}`}>
                           <div className="flex flex-col items-center">
@@ -526,15 +546,17 @@ export default function App() {
                   </thead>
                   <tbody>
                     {visibleEmployees.length === 0 ? (
-                      <tr><td colSpan={periodDates.length + 1} className="p-24 text-center text-slate-400 font-bold italic text-lg">Vælg dit navn i toppen...</td></tr>
+                      <tr><td colSpan={periodDates.length + 1} className="p-24 text-center text-slate-400 font-bold italic text-lg text-left text-left text-left text-left">Vælg dit navn i toppen for at se din personlige plan.</td></tr>
                     ) : visibleEmployees.map(emp => (
-                      <tr key={emp.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors text-left">
-                        <td className={`sticky left-0 z-20 p-6 font-black text-sm border-r border-slate-100 transition-colors ${currentEmpId === emp.id ? 'bg-blue-50/50 text-blue-700' : 'bg-white text-slate-700'}`}>{emp.name}</td>
+                      <tr key={emp.id} className="border-b border-slate-50 hover:bg-slate-50/30 transition-colors text-left text-left text-left">
+                        <td className={`sticky left-0 z-20 p-6 font-black text-sm border-r border-slate-100 transition-colors ${currentEmpId === emp.id ? 'bg-blue-50/50 text-blue-700' : 'bg-white text-slate-700 text-left text-left text-left'}`}>
+                          {emp.name}
+                        </td>
                         {periodDates.map((date, i) => {
                           const abs = getAbsenceOnDate(date, emp.id);
                           const shift = getShiftOnDate(date, emp.id);
                           const conflict = abs && shift;
-                          let bg = conflict ? "bg-red-500" : (shift ? "bg-blue-600 shadow-inner shadow-blue-900/20" : (abs?.type === 'vacation' ? "bg-green-500" : (abs?.type === 'vagtfri' ? "bg-amber-400" : "")));
+                          let bg = conflict ? "bg-red-500 conflict-glow" : (shift ? "bg-blue-600 shadow-inner shadow-blue-900/20" : (abs?.type === 'vacation' ? "bg-green-500" : (abs?.type === 'vagtfri' ? "bg-amber-400" : "")));
                           return (
                             <td key={i} className={`p-0 border-r border-slate-100/30 h-14 ${isWeekend(date) && !bg ? 'bg-slate-50/40' : ''}`}>
                               <div className={`w-full h-full flex items-center justify-center transition-all ${bg ? 'scale-[0.85] rounded-xl text-[10px] font-black text-white' : ''} ${bg}`}>
@@ -546,17 +568,18 @@ export default function App() {
                         })}
                       </tr>
                     ))}
+                    {/* Admin Opsamling & Statistik */}
                     {role === 'planner' && employees.length > 0 && (
                       <>
-                        <tr className="bg-slate-100/50 border-t-2 border-slate-200 text-left">
-                          <td className="sticky left-0 z-20 bg-slate-200 p-4 text-left font-black text-[10px] text-blue-600 uppercase border-r border-slate-200 shadow-sm leading-tight text-left">Ledige vagter</td>
+                        <tr className="bg-slate-100/50 border-t-2 border-slate-200 text-left text-left text-left">
+                          <td className="sticky left-0 z-20 bg-slate-200 p-4 text-left font-black text-[10px] text-blue-600 uppercase border-r border-slate-200 shadow-sm leading-tight text-left text-left text-left">Ledige vagter</td>
                           {periodDates.map((date, i) => {
                             const openShifts = weekendShifts.filter(s => !s.empId && s.date === formatDateForInput(date));
                             return <td key={i} className={`text-center font-black text-[10px] border-r border-slate-100/30 py-3 ${openShifts.length > 0 ? 'text-blue-600 bg-blue-50 animate-pulse' : 'text-slate-300'}`}>{openShifts.length > 0 ? openShifts.map(s => s.type.split('-')[0]).join('/') : '-'}</td>;
                           })}
                         </tr>
-                        <tr className="bg-slate-100/50 border-t border-slate-200 text-left">
-                          <td className="sticky left-0 z-20 bg-slate-200 p-4 text-left font-black text-[10px] text-slate-500 uppercase border-r border-slate-200 shadow-sm leading-tight text-left">Total på ferie</td>
+                        <tr className="bg-slate-100/50 border-t border-slate-200 text-left text-left text-left">
+                          <td className="sticky left-0 z-20 bg-slate-200 p-4 text-left font-black text-[10px] text-slate-500 uppercase border-r border-slate-200 shadow-sm leading-tight text-left text-left text-left">Total på ferie</td>
                           {periodDates.map((date, i) => {
                             const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
                             return <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${count > maxAway ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>{count > 0 ? count : '-'}</td>;
@@ -568,10 +591,34 @@ export default function App() {
                 </table>
               </div>
             </div>
-            {role === 'planner' && (
-              <section className="bg-white rounded-[2rem] p-8 border border-slate-200 flex justify-between items-center text-left">
-                <div><h2 className="text-2xl font-black mb-2 uppercase tracking-tighter">Automatisk Vagtfordeling</h2><p className="text-slate-500 text-sm font-medium">Tildel ledige vagter til dem med færrest vagter i perioden.</p></div>
-                <button onClick={handleAutoDistribute} className="bg-blue-600 hover:bg-blue-700 text-white py-4 px-8 rounded-2xl text-sm font-black flex items-center gap-2 transition-all active:scale-95 shadow-xl shadow-blue-100 leading-none"><Wand2 className="w-5 h-5" /> Fordel automatisk</button>
+
+            {/* Vagtfordeling Statistik (BOXES) */}
+            {role === 'planner' && employees.length > 0 && (
+              <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-left text-left text-left">
+                <div className="bg-white rounded-[2rem] p-8 border border-slate-200 flex flex-col justify-between text-left text-left text-left text-left">
+                  <div>
+                    <h2 className="text-2xl font-black mb-2 uppercase tracking-tighter text-left text-left text-left">Auto-fordeling</h2>
+                    <p className="text-slate-500 text-sm font-medium text-left text-left text-left">Fordel ledige vagter automatisk til dem med færrest vagter.</p>
+                  </div>
+                  <button onClick={handleAutoDistribute} className="mt-6 bg-blue-600 hover:bg-blue-700 text-white py-4 px-8 rounded-2xl text-sm font-black flex items-center justify-center gap-2 transition-all active:scale-95 shadow-xl shadow-blue-100 leading-none text-left text-left">
+                    <Wand2 className="w-5 h-5" /> Kør fordeling
+                  </button>
+                </div>
+                
+                <div className="lg:col-span-2 bg-white rounded-[2rem] p-8 border border-slate-200 text-left text-left text-left">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2 text-left text-left"><CalendarDays className="w-4 h-4 text-blue-600" /> Vagtstatistik (Total antal)</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-4">
+                    {employees.sort((a,b)=>a.name.localeCompare(b.name)).map(emp => {
+                      const count = weekendShifts.filter(s => s.empId === emp.id).length;
+                      return (
+                        <div key={emp.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col items-center text-left text-left text-left text-left">
+                          <p className="text-[10px] font-black text-slate-400 uppercase mb-1 truncate w-full text-center text-left text-left">{emp.name}</p>
+                          <p className="text-2xl font-black text-slate-900 leading-none text-left text-left">{count}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </section>
             )}
           </div>
@@ -579,18 +626,18 @@ export default function App() {
 
         {/* --- PERSONALE --- */}
         {activeTab === 'staff' && role === 'planner' && (
-          <div className="max-w-3xl mx-auto animate-in fade-in duration-500 text-left">
-            <header className="mb-12 text-left"><h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase">Personalestyring</h1></header>
-            <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 mb-10 text-left">
+          <div className="max-w-3xl mx-auto animate-in fade-in duration-500 text-left text-left text-left text-left text-left text-left text-left">
+            <header className="mb-12 text-left text-left text-left text-left text-left"><h1 className="text-4xl font-black text-slate-900 tracking-tight uppercase text-left text-left text-left text-left text-left text-left">Personalestyring</h1></header>
+            <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 mb-10 text-left text-left text-left text-left text-left text-left">
               <form onSubmit={handleAddEmployee} className="flex gap-4">
-                <div className="relative flex-1"><UserPlus className="absolute left-4 top-3.5 w-5 h-5 text-slate-300" /><input type="text" placeholder="Navn på medarbejder..." value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all" /></div>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest leading-none">Opret</button>
+                <div className="relative flex-1 text-left"><UserPlus className="absolute left-4 top-3.5 w-5 h-5 text-slate-300 text-left text-left" /><input type="text" placeholder="Navn på medarbejder..." value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all text-left text-left" /></div>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest leading-none text-left text-left text-left text-left">Opret</button>
               </form>
             </section>
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden text-left"><div className="divide-y divide-slate-100">{employees.sort((a,b)=>a.name.localeCompare(b.name)).map(emp => (
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden text-left text-left text-left text-left text-left text-left text-left"><div className="divide-y divide-slate-100">{employees.sort((a,b)=>a.name.localeCompare(b.name)).map(emp => (
               <div key={emp.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
-                <div className="flex items-center gap-4"><div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center font-black text-lg uppercase leading-none">{emp.name.charAt(0)}</div><span className="font-black text-xl text-slate-900 leading-none">{emp.name}</span></div>
-                <button onClick={() => handleDeleteEmployee(emp.id)} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl opacity-0 group-hover:opacity-100 transition-all active:scale-95"><Trash2 className="w-5 h-5" /></button>
+                <div className="flex items-center gap-4 text-left text-left text-left text-left"><div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center font-black text-lg uppercase leading-none text-left text-left text-left text-left">{emp.name.charAt(0)}</div><span className="font-black text-xl text-slate-900 text-left text-left text-left text-left">{emp.name}</span></div>
+                <button onClick={() => handleDeleteEmployee(emp.id)} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl opacity-0 group-hover:opacity-100 transition-all active:scale-95 leading-none text-left text-left text-left text-left text-left text-left"><Trash2 className="w-5 h-5 text-left text-left text-left" /></button>
               </div>
             ))}</div></div>
           </div>
@@ -598,7 +645,7 @@ export default function App() {
       </main>
 
       <footer className="h-24 flex items-center justify-center border-t border-slate-100 bg-white mt-auto text-center w-full px-4 text-center">
-        <button onClick={() => window.location.reload()} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-[0.2em] transition-all leading-none"><LogOut className="w-4 h-4" /> Nulstil session</button>
+        <button onClick={() => window.location.reload()} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-[0.2em] transition-all leading-none text-left text-left text-left text-left text-left"><LogOut className="w-4 h-4 text-left text-left text-left" /> Nulstil session</button>
       </footer>
     </div>
   );
