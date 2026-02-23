@@ -18,7 +18,8 @@ import {
   Users,
   UserPlus,
   ArrowRight,
-  UserCheck
+  UserCheck,
+  Info
 } from 'lucide-react';
 
 // --- Firebase Cloud Storage Setup ---
@@ -126,21 +127,18 @@ export default function App() {
     if (!user) return;
     const unsubs: (() => void)[] = [];
     try {
-      const empRef = collection(db, 'artifacts', appId, 'public', 'data', 'employees');
-      unsubs.push(onSnapshot(empRef, (s: QuerySnapshot<DocumentData>) => {
+      unsubs.push(onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'employees'), (s: QuerySnapshot<DocumentData>) => {
         setEmployees(s.docs.map(d => ({ ...d.data(), id: d.id } as Employee)));
       }));
 
-      const absRef = collection(db, 'artifacts', appId, 'public', 'data', 'absences');
-      unsubs.push(onSnapshot(absRef, (s: QuerySnapshot<DocumentData>) => {
+      unsubs.push(onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'absences'), (s: QuerySnapshot<DocumentData>) => {
         setAbsences(s.docs.map(d => ({ ...d.data(), id: d.id } as Absence)));
       }));
 
-      const shiftsRef = collection(db, 'artifacts', appId, 'public', 'data', 'shifts');
-      unsubs.push(onSnapshot(shiftsRef, (s: QuerySnapshot<DocumentData>) => {
+      unsubs.push(onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'shifts'), (s: QuerySnapshot<DocumentData>) => {
         setWeekendShifts(s.docs.map(d => ({ ...d.data(), id: d.id } as Shift)));
       }));
-    } catch (e) { console.error(e); }
+    } catch (e: any) { console.error(e); }
     return () => unsubs.forEach(fn => fn());
   }, [user]);
 
@@ -176,7 +174,7 @@ export default function App() {
   }, [absences, weekendShifts, employees]);
 
   const visibleEmployees = useMemo(() => {
-    if (role === 'planner') return employees;
+    if (role === 'planner') return employees.sort((a,b) => a.name.localeCompare(b.name));
     return employees.filter(e => e.id === currentEmpId);
   }, [employees, role, currentEmpId]);
 
@@ -187,25 +185,23 @@ export default function App() {
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'employees'), { name: newEmployeeName });
       setNewEmployeeName('');
-    } catch (e) { console.error(e); }
+    } catch (e: any) { console.error(e); }
   };
 
   const handleDeleteEmployee = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'employees', id));
-    } catch (e) { console.error(e); }
+    } catch (e: any) { console.error(e); }
   };
 
   const handleAddAbsence = async (e: FormEvent) => {
     e.preventDefault();
     if (!absForm.start || !absForm.end) return;
-    
     const targetId = role === 'employee' ? currentEmpId : absForm.empId;
     if (!targetId) {
-      alert("Vælg venligst dit navn før du gemmer.");
+      alert("Vælg venligst dit navn først.");
       return;
     }
-
     const newId = Date.now().toString();
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', newId), { ...absForm, empId: targetId, id: newId });
     setAbsForm({ ...absForm, start: '', end: '', empId: '' });
@@ -219,10 +215,8 @@ export default function App() {
     for (const date of weekendDates) {
       const dStr = formatDateForInput(date);
       if (weekendShifts.some(s => s.date === dStr)) continue;
-      
       const time = date.getTime();
       const available = employees.filter(emp => !absences.some(a => a.empId === emp.id && parseDate(a.start).getTime() <= time && parseDate(a.end).getTime() >= time));
-      
       if (available.length > 0) {
         available.sort((a, b) => counts[a.id] - counts[b.id]);
         const selected = available[0];
@@ -237,7 +231,7 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
       <div className="flex flex-col items-center gap-3">
         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-slate-400 font-bold text-sm tracking-tight uppercase">Indlæser vagtplansystem...</p>
+        <p className="text-slate-400 font-bold text-sm tracking-tight uppercase">Starter vagtplansystem...</p>
       </div>
     </div>
   );
@@ -299,7 +293,6 @@ export default function App() {
               if (newRole === 'employee') setActiveTab('input');
             }}
             className={`p-2.5 rounded-xl transition-all border flex items-center gap-2 ${role === 'planner' ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-slate-50 text-slate-400 border-slate-200'}`}
-            title="Skift rolle"
           >
             {role === 'planner' ? <Lock className="w-5 h-5" /> : <UserCircle className="w-5 h-5" />}
             <span className="text-xs font-black uppercase tracking-widest hidden lg:inline">
@@ -309,15 +302,14 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
         
         {/* --- REGISTRATION VIEW --- */}
         {activeTab === 'input' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
             <div className="lg:col-span-12 mb-4">
-              <h1 className="text-3xl font-black text-slate-900 tracking-tight">Ferie- & fraværsregistrering</h1>
-              <p className="text-slate-500 font-medium">Indtast dine ønsker til sommerferien herunder.</p>
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight">Fraværsregistrering</h1>
+              <p className="text-slate-500 font-medium text-lg">Indsend dine ønsker til ferie og fridage.</p>
             </div>
 
             <div className="lg:col-span-4 space-y-6">
@@ -329,77 +321,68 @@ export default function App() {
                 </h2>
 
                 {!currentEmpId && role === 'employee' ? (
-                  <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6 animate-bounce">
-                    <p className="text-red-700 text-xs font-bold flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4" /> Vælg dit navn i toppen først!
-                    </p>
+                  <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-6 flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5 text-red-500" />
+                    <p className="text-red-700 text-xs font-bold leading-tight">Hov! Du skal vælge dit navn i menuen foroven, før du kan registrere fravær.</p>
                   </div>
                 ) : role === 'employee' && (
                   <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 mb-6 flex items-center gap-3">
-                    <div className="bg-blue-600 p-2 rounded-lg text-white">
-                      <UserCheck className="w-4 h-4" />
-                    </div>
+                    <UserCheck className="w-5 h-5 text-blue-600" />
                     <div>
-                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest leading-none mb-1">Valgt profil</p>
+                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-0.5">Valgt medarbejder</p>
                       <p className="text-blue-900 text-sm font-bold leading-none">{employees.find(e => e.id === currentEmpId)?.name}</p>
                     </div>
                   </div>
                 )}
 
-                <form onSubmit={handleAddAbsence} className={`space-y-6 ${!currentEmpId && role === 'employee' ? 'opacity-50 pointer-events-none' : ''}`}>
+                <form onSubmit={handleAddAbsence} className={`space-y-6 ${!currentEmpId && role === 'employee' ? 'opacity-30 pointer-events-none' : ''}`}>
                   {role === 'planner' && (
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest ml-1">Medarbejder</label>
-                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all">
-                        <option value="">Vælg medarbejder...</option>
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Vælg Medarbejder</label>
+                      <select value={absForm.empId} onChange={e => setAbsForm({...absForm, empId: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Vælg...</option>
                         {employees.sort((a,b) => a.name.localeCompare(b.name)).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
                   )}
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest ml-1">Kategori</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Type</label>
                     <div className="grid grid-cols-2 gap-3">
-                      <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}>Ferie</button>
-                      <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}>Vagtfri</button>
+                      <button type="button" onClick={() => setAbsForm({...absForm, type: 'vacation'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vacation' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-400'}`}>Ferie</button>
+                      <button type="button" onClick={() => setAbsForm({...absForm, type: 'vagtfri'})} className={`py-3 rounded-xl text-xs font-black border transition-all ${absForm.type === 'vagtfri' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>Vagtfri</button>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest ml-1">Fra dato</label>
-                      <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Fra dato</label>
+                      <input type="date" value={absForm.start} onChange={e => setAbsForm({...absForm, start: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest ml-1">Til dato</label>
-                      <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block tracking-widest">Til dato</label>
+                      <input type="date" value={absForm.end} onChange={e => setAbsForm({...absForm, end: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none" />
                     </div>
                   </div>
-                  <button 
-                    type="submit" 
-                    disabled={!currentEmpId && role === 'employee'}
-                    className={`w-full py-4 rounded-2xl text-sm font-black transition-all shadow-xl active:scale-95 ${!currentEmpId && role === 'employee' ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'}`}
-                  >
-                    Gem registrering
-                  </button>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl text-sm font-black transition-all shadow-xl shadow-blue-100 active:scale-95">Gem ønske</button>
                 </form>
               </section>
 
               {role === 'planner' && (
                 <section className="bg-slate-900 rounded-3xl p-8 text-white space-y-8 relative overflow-hidden">
                   <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                    <Settings className="w-4 h-4" /> Periodeindstillinger
+                    <Settings className="w-4 h-4" /> Periode-opsætning
                   </h2>
                   <div className="space-y-6">
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægningsstart</label>
-                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægning Start</label>
+                      <input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægningsslut</label>
-                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Planlægning Slut</label>
+                      <input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value})} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Advarselsgrænse (Max fravær)</label>
-                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-500" />
+                      <label className="text-[10px] font-black text-slate-400 uppercase block mb-2 tracking-widest">Max fravær pr. dag</label>
+                      <input type="number" min="1" max="10" value={maxAway} onChange={e => setMaxAway(Number(e.target.value) || 0)} className="w-full bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-white outline-none" />
                     </div>
                   </div>
                 </section>
@@ -408,14 +391,17 @@ export default function App() {
 
             <div className="lg:col-span-8">
               <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-8 border-b border-slate-100 flex justify-between items-center">
-                  <h2 className="font-black text-2xl text-slate-900">Aktuelle ferieønsker</h2>
-                  <span className="text-[10px] font-black text-blue-600 uppercase px-3 py-1.5 bg-blue-50 rounded-full border border-blue-100 tracking-wider">Oversigt</span>
+                <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-white">
+                  <h2 className="font-black text-2xl text-slate-900">Registrerede ferier</h2>
+                  <div className="flex items-center gap-2 text-blue-600 bg-blue-50 px-4 py-2 rounded-full">
+                    <Info className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Synkroniseret i skyen</span>
+                  </div>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {absences.length === 0 ? (
-                    <div className="p-20 text-center flex flex-col items-center">
-                      <p className="text-slate-400 font-bold italic">Ingen ferieønsker fundet endnu...</p>
+                    <div className="p-24 text-center">
+                      <p className="text-slate-400 font-bold italic">Der er ingen registreringer i systemet endnu...</p>
                     </div>
                   ) : (
                     [...absences].sort((a,b) => parseDate(a.start).getTime() - parseDate(b.start).getTime()).map(a => {
@@ -428,7 +414,7 @@ export default function App() {
                             <div className={`w-1.5 h-12 rounded-full ${isVacation ? 'bg-green-500' : 'bg-amber-500'}`}></div>
                             <div>
                               <div className="flex items-center gap-3">
-                                <span className="font-black text-lg text-slate-900">{emp?.name || 'Ukendt medarbejder'} {isMine && <span className="text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">(Dig)</span>}</span>
+                                <span className="font-black text-lg text-slate-900">{emp?.name || 'Slettet person'} {isMine && <span className="text-[10px] text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">(Dig)</span>}</span>
                                 <span className={`text-[10px] uppercase font-black px-2.5 py-1 rounded-lg ${isVacation ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{a.type === 'vacation' ? 'Ferie' : 'Vagtfri'}</span>
                               </div>
                               <p className="text-sm font-bold text-slate-500 mt-1 flex items-center gap-1.5">
@@ -437,7 +423,7 @@ export default function App() {
                             </div>
                           </div>
                           {(role === 'planner' || isMine) && (
-                            <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 active:scale-90">
+                            <button onClick={() => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absences', a.id))} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
                               <Trash2 className="w-5 h-5" />
                             </button>
                           )}
@@ -461,7 +447,7 @@ export default function App() {
                 </div>
                 <div>
                   <h3 className="text-red-900 font-black text-lg">Konflikter i planen</h3>
-                  <p className="text-red-700 text-sm font-medium mb-4">Vigtigt: Følgende medarbejdere har weekendvagt mens de har ferie.</p>
+                  <p className="text-red-700 text-sm font-medium mb-4">Følgende personer er tildelt vagter mens de har ønsket fravær:</p>
                   <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {conflicts.map((c, i) => <li key={i} className="text-red-600 text-xs font-bold flex items-center gap-2 bg-white/50 p-2 rounded-lg border border-red-100"><ArrowRight className="w-3 h-3" /> {c}</li>)}
                   </ul>
@@ -502,8 +488,8 @@ export default function App() {
                   <tbody>
                     {visibleEmployees.length === 0 ? (
                       <tr>
-                        <td colSpan={periodDates.length + 1} className="p-20 text-center text-slate-400 font-bold italic">
-                          Vælg dit navn i toppen for at se din personlige kalender.
+                        <td colSpan={periodDates.length + 1} className="p-24 text-center text-slate-400 font-bold italic">
+                          Vælg dit navn i toppen for at få vist din personlige plan.
                         </td>
                       </tr>
                     ) : (
@@ -516,7 +502,6 @@ export default function App() {
                             const abs = getAbsenceOnDate(date, emp.id);
                             const shift = hasShiftOnDate(date, emp.id);
                             const conflict = abs && shift;
-                            
                             let bg = "";
                             if (conflict) bg = "bg-red-500";
                             else if (shift) bg = "bg-blue-600";
@@ -525,8 +510,8 @@ export default function App() {
 
                             return (
                               <td key={i} className={`p-0 border-r border-slate-100/30 h-14 ${isWeekend(date) && !bg ? 'bg-slate-50/40' : ''}`}>
-                                <div className={`w-full h-full flex items-center justify-center transition-all ${bg ? 'scale-[0.85] rounded-xl shadow-sm' : ''} ${bg}`}>
-                                  {shift && !conflict && <div className="w-1.5 h-1.5 bg-white rounded-full shadow-lg"></div>}
+                                <div className={`w-full h-full flex items-center justify-center transition-all ${bg ? 'scale-[0.85] rounded-xl' : ''} ${bg}`}>
+                                  {shift && !conflict && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
                                   {conflict && <AlertTriangle className="w-4 h-4 text-white animate-pulse" />}
                                 </div>
                               </td>
@@ -535,17 +520,15 @@ export default function App() {
                         </tr>
                       ))
                     )}
-                    {/* Sammenfatning række (bruger maxAway for at løse TS-fejlen og give overblik) */}
+                    {/* Sammenfatning række - løser "maxAway never read" fejlen */}
                     {role === 'planner' && employees.length > 0 && (
                       <tr className="bg-slate-50/50 border-t-2 border-slate-200">
-                        <td className="sticky left-0 z-20 bg-slate-100 p-4 text-right font-black text-[10px] text-slate-400 uppercase border-r border-slate-200 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)]">
-                          Total på ferie
-                        </td>
+                        <td className="sticky left-0 z-20 bg-slate-100 p-4 text-right font-black text-[10px] text-slate-400 uppercase border-r border-slate-200">Total på ferie</td>
                         {periodDates.map((date, i) => {
                           const count = employees.filter(e => getAbsenceOnDate(date, e.id)?.type === 'vacation').length;
-                          const overLimit = count > maxAway;
+                          const isOver = count > maxAway;
                           return (
-                            <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${overLimit ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
+                            <td key={i} className={`text-center font-black text-xs border-r border-slate-100/30 py-3 ${isOver ? 'bg-red-100 text-red-600' : 'text-slate-400'}`}>
                               {count > 0 ? count : '-'}
                             </td>
                           );
@@ -564,26 +547,26 @@ export default function App() {
                     <div className="bg-purple-50 text-purple-600 w-fit p-4 rounded-2xl mb-6">
                       <ShieldAlert className="w-8 h-8" />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-900 mb-3">Weekendfordeling</h2>
-                    <p className="text-slate-500 text-sm leading-relaxed mb-8 font-medium">Tildel manuelt i matrixen eller lad systemet fordele de resterende weekendvagter baseret på retfærdighedsprincippet.</p>
+                    <h2 className="text-2xl font-black text-slate-900 mb-3">Vagtfordeling</h2>
+                    <p className="text-slate-500 text-sm leading-relaxed mb-8">Systemet fordeler automatisk ledige weekendvagter til de medarbejdere, der ikke holder ferie, og som har færrest vagter.</p>
                   </div>
                   <button onClick={handleAutoDistribute} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 rounded-2xl text-sm font-black flex items-center justify-center gap-3 transition-all active:scale-95 shadow-xl shadow-slate-200">
-                    <Wand2 className="w-5 h-5" /> Kør automatisk fordeling
+                    <Wand2 className="w-5 h-5" /> Kør auto-fordeling
                   </button>
                 </div>
                 
                 <div className="lg:col-span-2 bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8">
                   <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Vagtstatistik (Antal vagter)
+                    <CheckCircle2 className="w-4 h-4 text-green-500" /> Vagtstatistik (Total antal)
                   </h3>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                     {employees.map(emp => {
                       const count = weekendShifts.filter(s => s.empId === emp.id).length;
                       return (
-                        <div key={emp.id} className="p-5 rounded-3xl border border-slate-100 bg-slate-50/50 flex flex-col items-center group hover:bg-white hover:border-blue-200 hover:shadow-lg transition-all cursor-default">
+                        <div key={emp.id} className="p-5 rounded-3xl border border-slate-100 bg-slate-50/50 flex flex-col items-center group hover:bg-white hover:border-blue-200 transition-all">
                           <p className="text-[10px] font-black text-slate-400 uppercase mb-2 truncate max-w-full">{emp.name}</p>
                           <div className="flex items-baseline gap-1">
-                            <p className="text-3xl font-black text-slate-900 group-hover:text-blue-600 transition-colors">{count}</p>
+                            <p className="text-3xl font-black text-slate-900 group-hover:text-blue-600">{count}</p>
                             <p className="text-[10px] font-bold text-slate-400 uppercase">stk</p>
                           </div>
                         </div>
@@ -599,26 +582,18 @@ export default function App() {
         {/* --- STAFF MANAGEMENT VIEW --- */}
         {activeTab === 'staff' && role === 'planner' && (
           <div className="max-w-3xl mx-auto animate-in fade-in duration-500">
-            <header className="mb-8 text-center">
-              <h1 className="text-3xl font-black text-slate-900">Personalestyring</h1>
-              <p className="text-slate-500">Tilføj eller fjern medarbejdere fra systemet.</p>
+            <header className="mb-12 text-center">
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight">Personalehåndtering</h1>
+              <p className="text-slate-500 text-lg">Tilføj nye ansatte eller fjern fratrådte medarbejdere.</p>
             </header>
 
-            <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 mb-8">
+            <section className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 mb-10">
               <form onSubmit={handleAddEmployee} className="flex gap-4">
                 <div className="relative flex-1">
                   <UserPlus className="absolute left-4 top-3.5 w-5 h-5 text-slate-300" />
-                  <input 
-                    type="text" 
-                    placeholder="Indtast medarbejderens navn..." 
-                    value={newEmployeeName}
-                    onChange={(e) => setNewEmployeeName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                  />
+                  <input type="text" placeholder="Indtast medarbejderens navn..." value={newEmployeeName} onChange={(e) => setNewEmployeeName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 py-3.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-all" />
                 </div>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl text-sm font-black flex items-center gap-2 transition-all shadow-lg shadow-blue-100">
-                  <Plus className="w-5 h-5" /> Opret
-                </button>
+                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-2xl text-sm font-black transition-all shadow-lg shadow-blue-100">Opret</button>
               </form>
             </section>
 
@@ -630,19 +605,12 @@ export default function App() {
                   employees.sort((a,b) => a.name.localeCompare(b.name)).map(emp => (
                     <div key={emp.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                       <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center font-black">
+                        <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center font-black text-lg">
                           {emp.name.charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-black text-lg text-slate-900">{emp.name}</span>
+                        <span className="font-black text-xl text-slate-900">{emp.name}</span>
                       </div>
-                      <button 
-                        onClick={() => {
-                          if (window.confirm(`Er du sikker på, at du vil fjerne ${emp.name}? Alle deres ønsker og vagter slettes også.`)) {
-                            handleDeleteEmployee(emp.id);
-                          }
-                        }} 
-                        className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100"
-                      >
+                      <button onClick={() => { if (window.confirm(`Slet ${emp.name}?`)) handleDeleteEmployee(emp.id); }} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100">
                         <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
@@ -654,10 +622,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer / Logout */}
       <footer className="h-24 flex items-center justify-center border-t border-slate-100 bg-white">
-        <button onClick={() => window.location.reload()} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest transition-all hover:gap-4">
-          <LogOut className="w-4 h-4" /> Nulstil session
+        <button onClick={() => window.location.reload()} className="flex items-center gap-3 text-slate-400 hover:text-slate-900 font-black text-xs uppercase tracking-widest transition-all">
+          <LogOut className="w-4 h-4" /> Nulstil Session
         </button>
       </footer>
     </div>
